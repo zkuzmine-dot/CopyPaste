@@ -1,3 +1,10 @@
-import os
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    DATABASE_URL: str
+
+
+settings = Settings()
