@@ -1,23 +1,19 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.connection import get_db
-from app.db.models.note import Note
+from app.schemas.note import NoteRead, NoteUpdate
+from app.services import notes as notes_service
 
 router = APIRouter()
 
-@router.get("/text")
+@router.get("/text", response_model=NoteRead)
 def read_text(db: Session = Depends(get_db)): # Это хуёво в маштабируемом проекте
-    note = db.get(Note, 1)
-    return {"text": note.text if note else ""}
+    note = notes_service.get_note(db, 1)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
 
-@router.put("/text")
-def update_text(new_text: str, db: Session = Depends(get_db)):
-    note = db.get(Note, 1)  #Запихнуть в отдельную функцию,чтобы размер ручки был меньше
-    if note:
-        note.text = new_text
-    else:
-        note = Note(id=1, text=new_text)
-        db.add(note)
-    db.commit()
-    return {"text": note.text} #Возвращать pydantic модель,чтобы не возвращать лишние поля
+@router.put("/text", response_model=NoteRead)
+def update_text(payload: NoteUpdate, db: Session = Depends(get_db)):
+    return notes_service.upsert_note(db, 1, payload)
