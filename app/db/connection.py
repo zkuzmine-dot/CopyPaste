@@ -1,6 +1,8 @@
-from fastapi import Request
+from typing import Annotated
+
+from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.settings import settings
 
@@ -22,5 +24,13 @@ def get_db(request: Request):
     db = request.app.state.session_factory()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
+
+
+# scope="function": коммит выполняется до отправки ответа, а не после
+DbSession = Annotated[Session, Depends(get_db, scope="function")]

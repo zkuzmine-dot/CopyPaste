@@ -16,6 +16,6 @@ def upsert_note(db: Session, note_id: int, payload: NoteUpdate) -> Note:
     else:
         note = Note(id=note_id, text=payload.text or "")
         db.add(note)
-    db.commit()
+    db.flush()
     db.refresh(note)
     return note
