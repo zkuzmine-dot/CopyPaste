@@ -7,7 +7,7 @@ from app.services import notes as notes_service
 router = APIRouter()
 
 @router.get("/text", response_model=NoteRead)
-def read_text(db: DbSession): # Это хуёво в маштабируемом проекте
+def read_text(db: DbSession): 
     note = notes_service.get_note(db, 1)
     if note is None:
         raise HTTPException(status_code=404, detail="Note not found")
