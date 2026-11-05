@@ -26,5 +26,20 @@ services:
       db:
         condition: service_healthy
 
+  # Периодические задачи (чистка протухших заметок).
+  scheduler:
+    build: .
+    command: python -m app.scheduler
+    env_file: .env
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+
 volumes:
   pgdata:

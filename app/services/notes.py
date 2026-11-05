@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models.note import Note
@@ -35,3 +35,13 @@ def update_note(db: Session, note: Note, payload: NoteUpdate) -> Note:
 def delete_note(db: Session, note: Note) -> None:
     db.delete(note)
     db.flush()
+
+
+def delete_expired_notes(db: Session) -> int:
+    # Один DELETE на все протухшие, без загрузки объектов в сессию
+    stmt = (
+        delete(Note)
+        .where(Note.expires_at <= func.now())
+        .execution_options(synchronize_session=False)
+    )
+    return db.execute(stmt).rowcount

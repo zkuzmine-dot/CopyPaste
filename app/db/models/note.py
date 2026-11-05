@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import mapped_column, Mapped
 
 from app.db.base import Base
@@ -8,6 +9,9 @@ from app.utils.slug import SLUG_LENGTH, generate_slug
 
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = (
+        Index("ix_notes_expires_at", "expires_at", postgresql_where=sql_text("expires_at IS NOT NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     text: Mapped[str] = mapped_column(Text, default="")

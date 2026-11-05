@@ -9,5 +9,7 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_PRE_PING: bool = True
 
+    CLEANUP_INTERVAL_SECONDS: int = 60
+
 
 settings = Settings()
