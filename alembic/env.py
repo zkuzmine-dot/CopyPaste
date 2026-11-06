@@ -13,7 +13,9 @@ from app.db.models.note import Note  # noqa: F401 — регистрирует �
 # access to the values within the .ini file in use.
 config = context.config
 # "%" экранируется, т.к. configparser воспринимает его как интерполяцию
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
+# Тесты передают свой URL (тестовая БД) — его не перезаписываем
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

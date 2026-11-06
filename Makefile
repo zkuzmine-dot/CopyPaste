@@ -1,4 +1,4 @@
-.PHONY: up down migrate revision
+.PHONY: up down migrate revision test
 
 up:
 	docker compose up --build
@@ -12,3 +12,6 @@ migrate:
 revision:
 	@test -n "$(m)" || (echo 'Usage: make revision m="message"' && exit 1)
 	docker compose exec app alembic revision --autogenerate -m "$(m)"
+
+test:
+	docker compose exec app pytest $(args)
