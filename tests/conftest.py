@@ -3,9 +3,8 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, make_url, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 
-from app.db.connection import get_db
 from app.main import app
 from app.settings import settings
 
@@ -50,19 +49,21 @@ def connection(engine):
 
 
 @pytest.fixture
-def client(connection):
-    def override_get_db():
-        # create_savepoint: commit/rollback сессии работают с SAVEPOINT, а не с внешней транзакцией
-        db = Session(bind=connection, join_transaction_mode="create_savepoint")
-        try:
-            yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+def session_factory(connection):
+    # create_savepoint: commit/rollback сессии работают с SAVEPOINT, а не с внешней транзакцией
+    return sessionmaker(bind=connection, join_transaction_mode="create_savepoint")
 
-    app.dependency_overrides[get_db] = override_get_db
+
+@pytest.fixture
+def db(session_factory):
+    with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+def client(session_factory):
+    # Настоящий get_db берёт фабрику из app.state — подкладываем тестовую.
+    # lifespan не запускаем (TestClient без with), поэтому выставляем руками
+    app.state.session_factory = session_factory
     yield TestClient(app)
-    app.dependency_overrides.clear()
+    del app.state.session_factory
