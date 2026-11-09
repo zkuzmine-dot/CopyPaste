@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, update
@@ -11,7 +11,7 @@ URL = "/api/notes"
 
 
 def future(hours: int = 1) -> str:
-    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    return (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
 
 
 @pytest.fixture
@@ -29,6 +29,7 @@ def expire(connection, slug: str) -> None:
 
 
 # --- POST ---
+
 
 def test_create_note(client):
     response = client.post(URL, json={"text": "hello"})
@@ -48,7 +49,9 @@ def test_create_note_with_expires_at(client):
     response = client.post(URL, json={"text": "hello", "expires_at": expires_at})
 
     assert response.status_code == 201
-    assert datetime.fromisoformat(response.json()["expires_at"]) == datetime.fromisoformat(expires_at)
+    assert datetime.fromisoformat(response.json()["expires_at"]) == datetime.fromisoformat(
+        expires_at
+    )
 
 
 def test_create_note_max_length(client):
@@ -59,6 +62,7 @@ def test_create_note_max_length(client):
 
 # --- GET ---
 
+
 def test_get_note(client, note):
     response = client.get(f"{URL}/{note['slug']}")
 
@@ -67,6 +71,7 @@ def test_get_note(client, note):
 
 
 # --- PUT ---
+
 
 def test_update_text(client, note):
     response = client.put(f"{URL}/{note['slug']}", json={"text": "updated"})
@@ -95,6 +100,7 @@ def test_update_expires_at_null_removes_expiry(client):
 
 # --- DELETE ---
 
+
 def test_delete_note(client, note):
     response = client.delete(f"{URL}/{note['slug']}")
 
@@ -103,6 +109,7 @@ def test_delete_note(client, note):
 
 
 # --- 404 ---
+
 
 @pytest.mark.parametrize(
     ("method", "body"),
@@ -132,6 +139,7 @@ def test_expired_note_returns_404(client, connection, note, method, body):
 
 # --- 422 ---
 
+
 def test_create_too_long_text(client):
     response = client.post(URL, json={"text": "a" * (NOTE_TEXT_MAX_LENGTH + 1)})
 
@@ -154,7 +162,14 @@ def test_update_too_long_text(client, note):
         {"text": "x", "expires_at": "2030-01-01T00:00:00"},
         {"text": "x", "expires_at": "завтра"},
     ],
-    ids=["no-text", "empty-text", "text-not-string", "expires-in-past", "expires-no-tz", "expires-garbage"],
+    ids=[
+        "no-text",
+        "empty-text",
+        "text-not-string",
+        "expires-in-past",
+        "expires-no-tz",
+        "expires-garbage",
+    ],
 )
 def test_create_invalid_body(client, body):
     response = client.post(URL, json=body)

@@ -1,4 +1,6 @@
-from sqlalchemy import delete, func, or_, select
+from typing import Any, cast
+
+from sqlalchemy import CursorResult, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models.note import Note
@@ -22,7 +24,6 @@ def get_note_by_slug(db: Session, slug: str) -> Note | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
-
 def update_note(db: Session, note: Note, payload: NoteUpdate) -> Note:
     # exclude_unset: меняем только поля, которые клиент реально прислал
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -44,4 +45,6 @@ def delete_expired_notes(db: Session) -> int:
         .where(Note.expires_at <= func.now())
         .execution_options(synchronize_session=False)
     )
-    return db.execute(stmt).rowcount
+    # execute() типизирован как общий Result, а rowcount есть только у CursorResult (DML)
+    result = cast(CursorResult[Any], db.execute(stmt))
+    return result.rowcount

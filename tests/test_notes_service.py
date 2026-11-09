@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
@@ -20,7 +20,7 @@ def expired():
 
 
 def future():
-    return datetime.now(timezone.utc) + timedelta(hours=1)
+    return datetime.now(UTC) + timedelta(hours=1)
 
 
 def slugs_in_db(db) -> set[str]:
@@ -28,6 +28,7 @@ def slugs_in_db(db) -> set[str]:
 
 
 # --- create_note ---
+
 
 def test_create_note_saves_to_db(db):
     expires_at = future()
@@ -49,6 +50,7 @@ def test_create_note_generates_unique_slugs(db):
 
 
 # --- get_note_by_slug ---
+
 
 def test_get_note_by_slug(db):
     note = make_note(db)
@@ -73,6 +75,7 @@ def test_get_note_by_slug_expired(db):
 
 
 # --- update_note ---
+
 
 def test_update_note_text(db):
     note = make_note(db, expires_at=future())
@@ -113,6 +116,7 @@ def test_update_note_empty_payload_changes_nothing(db):
 
 # --- delete_note ---
 
+
 def test_delete_note(db):
     note = make_note(db)
     other = make_note(db)
@@ -123,6 +127,7 @@ def test_delete_note(db):
 
 
 # --- delete_expired_notes ---
+
 
 def test_delete_expired_notes(db):
     make_note(db, expires_at=expired())

@@ -1,7 +1,7 @@
 """create notes table
 
 Revision ID: 0d1e1056b1ea
-Revises: 
+Revises:
 Create Date: 2026-10-28 18:06:55.642620
 
 """

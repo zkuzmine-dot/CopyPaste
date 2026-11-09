@@ -14,20 +14,24 @@ def get_note_or_404(db: DbSession, slug: str) -> Note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
     return note
 
+
 @router.post("", response_model=NoteRead, status_code=status.HTTP_201_CREATED)
-def create_note(payload: NoteCreate, db: DbSession):
+def create_note(payload: NoteCreate, db: DbSession) -> Note:
     return notes_service.create_note(db, payload)
 
+
 @router.get("/{slug}", response_model=NoteRead)
-def read_note(slug: str, db: DbSession):
+def read_note(slug: str, db: DbSession) -> Note:
     return get_note_or_404(db, slug)
 
+
 @router.put("/{slug}", response_model=NoteRead)
-def update_note(slug: str, payload: NoteUpdate, db: DbSession):
+def update_note(slug: str, payload: NoteUpdate, db: DbSession) -> Note:
     note = get_note_or_404(db, slug)
     return notes_service.update_note(db, note, payload)
 
+
 @router.delete("/{slug}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_note(slug: str, db: DbSession):
+def delete_note(slug: str, db: DbSession) -> None:
     note = get_note_or_404(db, slug)
     notes_service.delete_note(db, note)

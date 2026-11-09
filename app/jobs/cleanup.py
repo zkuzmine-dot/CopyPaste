@@ -18,7 +18,9 @@ def run_cleanup(session_factory: sessionmaker) -> int:
 
 if __name__ == "__main__":
     # Разовый запуск: python -m app.jobs.cleanup
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     engine = create_db_engine()
     try:
         run_cleanup(create_session_factory(engine))

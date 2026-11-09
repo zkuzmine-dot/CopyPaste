@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -20,7 +21,7 @@ def create_session_factory(engine: Engine) -> sessionmaker:
     return sessionmaker(bind=engine)
 
 
-def get_db(request: Request):
+def get_db(request: Request) -> Iterator[Session]:
     db = request.app.state.session_factory()
     try:
         yield db

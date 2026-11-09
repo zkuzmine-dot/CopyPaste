@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
@@ -7,7 +7,7 @@ NOTE_TEXT_MAX_LENGTH = 100_000
 
 
 def _must_be_future(value: datetime) -> datetime:
-    if value <= datetime.now(timezone.utc):
+    if value <= datetime.now(UTC):
         raise ValueError("expires_at must be in the future")
     return value
 
