@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CopyPaste</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <a class="logo" href="/">CopyPaste</a>
+      <a class="new-link" href="/">Новая заметка</a>
+    </header>
+
+    <textarea
+      id="text"
+      class="editor"
+      placeholder="Вставьте или напишите текст…"
+      maxlength="100000"
+      spellcheck="false"
+      autofocus
+    ></textarea>
+
+    <div class="meta">
+      <span id="info" class="info"></span>
+      <span id="counter" class="counter">0 / 100 000</span>
+    </div>
+
+    <div class="toolbar">
+      <label class="expiry">
+        <span>Хранить</span>
+        <select id="expiry">
+          <option value="0">навсегда</option>
+          <option value="600">10 минут</option>
+          <option value="3600">1 час</option>
+          <option value="86400">1 день</option>
+          <option value="604800">1 неделю</option>
+        </select>
+      </label>
+
+      <div class="buttons">
+        <button id="save" class="button primary" type="button">Сохранить</button>
+        <button id="copy" class="button" type="button">Скопировать</button>
+        <button id="share" class="button" type="button" disabled>Поделиться</button>
+      </div>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
