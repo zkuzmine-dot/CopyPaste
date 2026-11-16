@@ -18,3 +18,8 @@ def index() -> FileResponse:
 @router.get("/n/{slug}")
 def note_page(slug: str) -> FileResponse:
     return FileResponse(INDEX_HTML)
+
+
+@router.get("/c/{slug}")
+def channel_page(slug: str) -> FileResponse:
+    return FileResponse(INDEX_HTML)

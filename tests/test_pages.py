@@ -10,7 +10,7 @@ def page_client() -> TestClient:
     return TestClient(app)
 
 
-@pytest.mark.parametrize("path", ["/", "/n/a5z573fs"])
+@pytest.mark.parametrize("path", ["/", "/n/a5z573fs", "/c/a5z573fs"])
 def test_page_returns_html(page_client, path):
     response = page_client.get(path)
 
@@ -36,3 +36,4 @@ def test_pages_not_in_openapi(page_client):
 
     assert "/" not in paths
     assert "/n/{slug}" not in paths
+    assert "/c/{slug}" not in paths

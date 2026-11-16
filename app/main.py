@@ -5,6 +5,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.channels.routes import router as channels_router
 from app.api.notes.routes import router as notes_router
 from app.db.connection import create_db_engine, create_session_factory
 from app.pages import STATIC_DIR
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(notes_router)
+app.include_router(channels_router)
 app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
