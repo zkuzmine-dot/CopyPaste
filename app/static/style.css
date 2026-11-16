@@ -33,6 +33,11 @@
   box-sizing: border-box;
 }
 
+/* Атрибут hidden должен побеждать display: flex у блоков ниже */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -70,6 +75,55 @@ body {
 
 .new-link:hover {
   text-decoration: underline;
+}
+
+.editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.burn-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.burn-confirm-title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.burn-confirm-text {
+  margin: 0;
+  color: var(--muted);
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.burn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.burn input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
 }
 
 .editor {
@@ -175,4 +229,92 @@ body {
 
 .status.error {
   color: var(--error);
+}
+
+.share-dialog {
+  width: min(400px, calc(100vw - 32px));
+  padding: 24px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.share-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.share-close-form {
+  margin: 0;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.share-close {
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.share-close:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.share-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.share-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.share-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-url {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: 13px ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.share-qr {
+  align-self: center;
+  width: 232px;
+  height: 232px;
+  border-radius: var(--radius);
+}
+
+.share-download {
+  align-self: center;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.share-download:hover {
+  text-decoration: underline;
 }

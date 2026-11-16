@@ -5,12 +5,23 @@ const textEl = document.getElementById("text");
 const infoEl = document.getElementById("info");
 const counterEl = document.getElementById("counter");
 const expiryEl = document.getElementById("expiry");
+const burnEl = document.getElementById("burn");
+const editorAreaEl = document.getElementById("editor-area");
+const burnConfirmEl = document.getElementById("burn-confirm");
+const burnRevealBtn = document.getElementById("burn-reveal");
 const saveBtn = document.getElementById("save");
 const copyBtn = document.getElementById("copy");
 const shareBtn = document.getElementById("share");
 const statusEl = document.getElementById("status");
+const shareDialog = document.getElementById("share-dialog");
+const shareUrlEl = document.getElementById("share-url");
+const shareCopyBtn = document.getElementById("share-copy");
+const shareQrEl = document.getElementById("share-qr");
+const shareQrDownload = document.getElementById("share-qr-download");
 
 let currentSlug = null;
+// Одноразовая заметка, которую ещё не показали: ждём подтверждения
+let pendingSlug = null;
 let statusTimer = null;
 
 function slugFromPath() {
@@ -54,9 +65,17 @@ function setNote(note) {
     infoEl.textContent = "";
     return;
   }
-  infoEl.textContent = note.expires_at
-    ? `Удалится ${formatDate(note.expires_at)}`
-    : "Хранится бессрочно";
+  const parts = [];
+  if (note.burn_after_read) {
+    parts.push("Удалится после первого прочтения");
+  }
+  parts.push(note.expires_at ? `Удалится ${formatDate(note.expires_at)}` : "Хранится бессрочно");
+  infoEl.textContent = parts.join(" · ");
+}
+
+function showEditor(visible) {
+  editorAreaEl.hidden = !visible;
+  burnConfirmEl.hidden = visible;
 }
 
 function setBusy(busy) {
@@ -85,20 +104,56 @@ async function errorMessage(response) {
 
 async function loadNote(slug) {
   setNote(null);
+  pendingSlug = null;
+  showEditor(true);
   textEl.value = "";
   updateCounter();
+  statusEl.textContent = "";
 
   try {
+    // GET ничего не сжигает: у одноразовой заметки text придёт как null
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}`);
     if (!response.ok) {
       showStatus(await errorMessage(response), "error");
       return;
     }
     const note = await response.json();
-    textEl.value = note.text;
-    updateCounter();
+    if (note.burn_after_read) {
+      pendingSlug = slug;
+      showEditor(false);
+      return;
+    }
+    showNote(note);
+  } catch {
+    showStatus("Не удалось связаться с сервером", "error");
+  }
+}
+
+function showNote(note) {
+  textEl.value = note.text;
+  updateCounter();
+  if (note.burn_after_read) {
+    // Заметки на сервере больше нет — делиться нечем
+    setNote(null);
+    infoEl.textContent = "Заметка удалена с сервера — это был единственный просмотр";
+  } else {
     setNote(note);
-    statusEl.textContent = "";
+  }
+}
+
+async function revealNote() {
+  const slug = pendingSlug;
+  pendingSlug = null;
+  showEditor(true);
+  try {
+    const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}/read`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      showStatus(await errorMessage(response), "error");
+      return;
+    }
+    showNote(await response.json());
   } catch {
     showStatus("Не удалось связаться с сервером", "error");
   }
@@ -111,7 +166,7 @@ async function saveNote() {
     return;
   }
 
-  const body = { text };
+  const body = { text, burn_after_read: burnEl.checked };
   const seconds = Number(expiryEl.value);
   if (seconds > 0) {
     body.expires_at = new Date(Date.now() + seconds * 1000).toISOString();
@@ -172,12 +227,23 @@ async function copyText() {
   }
 }
 
-async function shareLink() {
+function openShareDialog() {
   if (!currentSlug) {
     return;
   }
+  const qrUrl = `${API_URL}/${encodeURIComponent(currentSlug)}/qr`;
+  shareUrlEl.value = noteUrl(currentSlug);
+  shareQrEl.src = qrUrl;
+  shareQrDownload.href = qrUrl;
+  shareQrDownload.download = `copypaste-${currentSlug}.svg`;
+  shareDialog.showModal();
+  shareUrlEl.select();
+}
+
+async function shareLink() {
   try {
-    await copyToClipboard(noteUrl(currentSlug));
+    await copyToClipboard(shareUrlEl.value);
+    shareDialog.close();
     showStatus("Ссылка скопирована");
   } catch {
     showStatus("Не удалось скопировать ссылку", "error");
@@ -189,6 +255,8 @@ function route() {
   if (slug) {
     loadNote(slug);
   } else {
+    pendingSlug = null;
+    showEditor(true);
     textEl.value = "";
     updateCounter();
     setNote(null);
@@ -199,7 +267,22 @@ function route() {
 textEl.addEventListener("input", updateCounter);
 saveBtn.addEventListener("click", saveNote);
 copyBtn.addEventListener("click", copyText);
-shareBtn.addEventListener("click", shareLink);
+shareBtn.addEventListener("click", openShareDialog);
+shareCopyBtn.addEventListener("click", shareLink);
+burnRevealBtn.addEventListener("click", revealNote);
+
+// Клик по затемнённому фону вокруг окна закрывает его
+shareDialog.addEventListener("click", (event) => {
+  const rect = shareDialog.getBoundingClientRect();
+  const outside =
+    event.clientX < rect.left ||
+    event.clientX > rect.right ||
+    event.clientY < rect.top ||
+    event.clientY > rect.bottom;
+  if (outside) {
+    shareDialog.close();
+  }
+});
 
 textEl.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {

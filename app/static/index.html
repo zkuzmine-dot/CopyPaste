@@ -13,41 +13,80 @@
       <a class="new-link" href="/">Новая заметка</a>
     </header>
 
-    <textarea
-      id="text"
-      class="editor"
-      placeholder="Вставьте или напишите текст…"
-      maxlength="100000"
-      spellcheck="false"
-      autofocus
-    ></textarea>
+    <section id="burn-confirm" class="burn-confirm" hidden>
+      <h2 class="burn-confirm-title">Эта заметка удалится сразу после просмотра</h2>
+      <p class="burn-confirm-text">
+        Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
+      </p>
+      <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
+    </section>
 
-    <div class="meta">
-      <span id="info" class="info"></span>
-      <span id="counter" class="counter">0 / 100 000</span>
-    </div>
+    <div id="editor-area" class="editor-area">
+      <textarea
+        id="text"
+        class="editor"
+        placeholder="Вставьте или напишите текст…"
+        maxlength="100000"
+        spellcheck="false"
+        autofocus
+      ></textarea>
 
-    <div class="toolbar">
-      <label class="expiry">
-        <span>Хранить</span>
-        <select id="expiry">
-          <option value="0">навсегда</option>
-          <option value="600">10 минут</option>
-          <option value="3600">1 час</option>
-          <option value="86400">1 день</option>
-          <option value="604800">1 неделю</option>
-        </select>
-      </label>
+      <div class="meta">
+        <span id="info" class="info"></span>
+        <span id="counter" class="counter">0 / 100 000</span>
+      </div>
 
-      <div class="buttons">
-        <button id="save" class="button primary" type="button">Сохранить</button>
-        <button id="copy" class="button" type="button">Скопировать</button>
-        <button id="share" class="button" type="button" disabled>Поделиться</button>
+      <div class="toolbar">
+        <div class="options">
+          <label class="expiry">
+            <span>Хранить</span>
+            <select id="expiry">
+              <option value="0">навсегда</option>
+              <option value="600">10 минут</option>
+              <option value="3600">1 час</option>
+              <option value="86400">1 день</option>
+              <option value="604800">1 неделю</option>
+            </select>
+          </label>
+
+          <label class="burn">
+            <input id="burn" type="checkbox">
+            <span>Удалить после прочтения</span>
+          </label>
+        </div>
+
+        <div class="buttons">
+          <button id="save" class="button primary" type="button">Сохранить</button>
+          <button id="copy" class="button" type="button">Скопировать</button>
+          <button id="share" class="button" type="button" disabled>Поделиться</button>
+        </div>
       </div>
     </div>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
+
+  <dialog id="share-dialog" class="share-dialog">
+    <form method="dialog" class="share-close-form">
+      <button class="share-close" type="submit" aria-label="Закрыть">×</button>
+    </form>
+
+    <h2 class="share-title">Поделиться заметкой</h2>
+
+    <div class="share-option">
+      <span class="share-label">Ссылка</span>
+      <div class="share-link-row">
+        <input id="share-url" class="share-url" type="text" readonly>
+        <button id="share-copy" class="button primary" type="button">Скопировать</button>
+      </div>
+    </div>
+
+    <div class="share-option">
+      <span class="share-label">QR-код — отсканируйте камерой телефона</span>
+      <img id="share-qr" class="share-qr" alt="QR-код со ссылкой на заметку" width="232" height="232">
+      <a id="share-qr-download" class="share-download" download>Скачать QR-код</a>
+    </div>
+  </dialog>
 
   <script src="/static/app.js"></script>
 </body>

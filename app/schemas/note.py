@@ -21,6 +21,7 @@ ExpiresAt = Annotated[AwareDatetime, AfterValidator(_must_be_future)]
 class NoteCreate(BaseModel):
     text: NoteText
     expires_at: ExpiresAt | None = None
+    burn_after_read: bool = False
 
 
 class NoteUpdate(BaseModel):
@@ -40,7 +41,9 @@ class NoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     slug: str
-    text: str
+    # None у непрочитанной одноразовой заметки: текст отдаёт только POST /{slug}/read
+    text: str | None
     created_at: datetime
     updated_at: datetime
     expires_at: datetime | None
+    burn_after_read: bool

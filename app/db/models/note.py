@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy import DateTime, Index, String, Text, false, func
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,3 +26,4 @@ class Note(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    burn_after_read: Mapped[bool] = mapped_column(default=False, server_default=false())
