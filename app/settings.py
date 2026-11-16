@@ -11,5 +11,10 @@ class Settings(BaseSettings):
 
     CLEANUP_INTERVAL_SECONDS: int = 60
 
+    MESSAGE_TTL_SECONDS: int = 60
+    CHANNEL_IDLE_TIMEOUT_SECONDS: int = 300
+    WS_AUTH_TIMEOUT_SECONDS: int = 5
+    CHANNEL_CLEANUP_INTERVAL_SECONDS: int = 15
+
 
 settings = Settings()
