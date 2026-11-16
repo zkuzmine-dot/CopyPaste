@@ -39,9 +39,11 @@ def _add_participant(
     return participant, token
 
 
-def _lock_channel(db: Session, channel_id: int) -> None:
+def _lock_active_channel(db: Session, channel_id: int) -> None:
     # Сериализует действия в канале: роль, проверенная после блокировки, не устареет до коммита
-    db.execute(select(Channel.id).where(Channel.id == channel_id).with_for_update())
+    stmt = select(Channel.id).where(Channel.id == channel_id, _is_active()).with_for_update()
+    if db.execute(stmt).first() is None:
+        raise ChannelNotFoundError
 
 
 def _touch(db: Session, channel_id: int) -> None:
@@ -92,7 +94,7 @@ def get_live_messages(db: Session, channel: Channel) -> Sequence[Message]:
 
 
 def add_message(db: Session, participant: Participant, text: str) -> Message:
-    _lock_channel(db, participant.channel_id)
+    _lock_active_channel(db, participant.channel_id)
     db.refresh(participant)
     if participant.role != ParticipantRole.SENDER:
         raise ActionNotAllowedError
@@ -109,7 +111,7 @@ def add_message(db: Session, participant: Participant, text: str) -> Message:
 
 
 def become_sender(db: Session, participant: Participant) -> None:
-    _lock_channel(db, participant.channel_id)
+    _lock_active_channel(db, participant.channel_id)
     db.refresh(participant)
     if participant.role != ParticipantRole.RECEIVER:
         raise ActionNotAllowedError
@@ -124,3 +126,23 @@ def become_sender(db: Session, participant: Participant) -> None:
 def close_channel(db: Session, channel: Channel) -> None:
     channel.closed_at = func.now()
     db.flush()
+
+
+def close_if_idle(db: Session, channel_id: int) -> float | None:
+    """Закрывает канал, если он бездействует. Иначе — сколько секунд осталось до закрытия."""
+    idle = timedelta(seconds=settings.CHANNEL_IDLE_TIMEOUT_SECONDS)
+    db.execute(
+        update(Channel)
+        .where(
+            Channel.id == channel_id,
+            Channel.closed_at.is_(None),
+            Channel.last_activity_at <= func.now() - idle,
+        )
+        .values(closed_at=func.now())
+    )
+    seconds_left = db.scalar(
+        select(func.extract("epoch", Channel.last_activity_at + idle - func.now())).where(
+            Channel.id == channel_id, _is_active()
+        )
+    )
+    return None if seconds_left is None else float(seconds_left)

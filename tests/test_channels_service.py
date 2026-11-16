@@ -176,3 +176,46 @@ def test_new_sender_can_send_and_old_cannot(db, receiver, sender):
     channels_service.add_message(db, receiver, "from new sender")
     with pytest.raises(channels_service.ActionNotAllowedError):
         channels_service.add_message(db, sender, "from old sender")
+
+
+# --- действия в закрытом канале ---
+
+
+@pytest.mark.parametrize("close", ["closed", "idle"])
+def test_actions_in_inactive_channel_not_allowed(db, receiver, sender, close):
+    if close == "closed":
+        channels_service.close_channel(db, sender.channel)
+    else:
+        set_last_activity(db, sender.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
+
+    with pytest.raises(channels_service.ChannelNotFoundError):
+        channels_service.add_message(db, sender, "late")
+    with pytest.raises(channels_service.ChannelNotFoundError):
+        channels_service.become_sender(db, receiver)
+
+
+# --- close_if_idle ---
+
+
+def test_close_if_idle_keeps_active_channel(db, receiver):
+    set_last_activity(db, receiver.channel, 10)
+
+    seconds_left = channels_service.close_if_idle(db, receiver.channel_id)
+
+    assert seconds_left == pytest.approx(settings.CHANNEL_IDLE_TIMEOUT_SECONDS - 10, abs=1)
+    db.refresh(receiver.channel)
+    assert receiver.channel.closed_at is None
+
+
+def test_close_if_idle_closes_idle_channel(db, receiver):
+    set_last_activity(db, receiver.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
+
+    assert channels_service.close_if_idle(db, receiver.channel_id) is None
+    db.refresh(receiver.channel)
+    assert receiver.channel.closed_at is not None
+
+
+def test_close_if_idle_on_closed_channel(db, receiver):
+    channels_service.close_channel(db, receiver.channel)
+
+    assert channels_service.close_if_idle(db, receiver.channel_id) is None
