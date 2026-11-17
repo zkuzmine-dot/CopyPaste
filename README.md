@@ -17,6 +17,13 @@ cp .env.example .env   # заполнить своими значениями
 make up
 ```
 
+`FILES_SIGNING_SECRET` в `.env` обязателен (не короче 32 символов), без него приложение не
+стартует. Сгенерировать:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
 - приложение: http://localhost:8000
 - документация API: http://localhost:8000/docs
 

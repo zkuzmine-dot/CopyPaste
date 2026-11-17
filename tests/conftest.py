@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 from app.settings import settings
+from app.storage.local import LocalFileStorage
 
 TEST_DATABASE_URL = make_url(settings.DATABASE_URL).set(
     database=f"{make_url(settings.DATABASE_URL).database}_test"
@@ -61,9 +62,16 @@ def db(session_factory):
 
 
 @pytest.fixture
-def client(session_factory):
+def file_storage(tmp_path) -> LocalFileStorage:
+    return LocalFileStorage(tmp_path / "files")
+
+
+@pytest.fixture
+def client(session_factory, file_storage):
     # Настоящий get_db берёт фабрику из app.state — подкладываем тестовую.
     # lifespan не запускаем (TestClient без with), поэтому выставляем руками
     app.state.session_factory = session_factory
+    app.state.file_storage = file_storage
     yield TestClient(app)
     del app.state.session_factory
+    del app.state.file_storage

@@ -13,6 +13,7 @@ from app.pages import STATIC_DIR
 from app.pages import router as pages_router
 from app.realtime.manager import ChannelManager
 from app.settings import settings
+from app.storage.local import LocalFileStorage
 
 
 @asynccontextmanager
@@ -21,6 +22,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.channel_manager = ChannelManager()
+    app.state.file_storage = LocalFileStorage(settings.FILES_DIR)
     yield
     engine.dispose()
 
