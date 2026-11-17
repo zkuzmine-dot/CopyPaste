@@ -12,6 +12,7 @@ from app.db.connection import create_db_engine, create_session_factory
 from app.pages import STATIC_DIR
 from app.pages import router as pages_router
 from app.realtime.manager import ChannelManager
+from app.settings import settings
 
 
 @asynccontextmanager
@@ -32,4 +33,4 @@ app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0")
+    uvicorn.run("app.main:app", host="0.0.0.0", ws_max_size=settings.WS_MAX_MESSAGE_BYTES)

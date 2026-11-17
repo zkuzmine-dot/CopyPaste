@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.db.models.channel import Participant, ParticipantRole
 from app.realtime.manager import ChannelManager, CloseCode, Connection
+from app.realtime.rate_limit import TokenBucket
 from app.schemas.channel import MessageRead
 from app.schemas.channel_events import (
     AuthEvent,
@@ -39,6 +40,10 @@ class InvalidEventError(Exception):
     pass
 
 
+class MessageTooBigError(Exception):
+    pass
+
+
 async def _run_db[T](factory: sessionmaker[Session], fn: Callable[[Session], T]) -> T:
     # Сессия на событие, а не на всё соединение; синхронная БД — в пуле потоков
     def call() -> T:
@@ -55,6 +60,10 @@ async def _receive_event(websocket: WebSocket) -> ClientEvent:
     text = message.get("text")
     if text is None:
         raise InvalidEventError("Expected a text frame with JSON")
+    # Основной лимит — --ws-max-size у uvicorn, он не даст дочитать огромное сообщение.
+    # Эта проверка — на случай запуска без него
+    if len(text.encode()) > settings.WS_MAX_MESSAGE_BYTES:
+        raise MessageTooBigError
     try:
         return client_event_adapter.validate_json(text)
     except ValidationError as exc:
@@ -79,6 +88,9 @@ async def _authenticate(
             event = await _receive_event(websocket)
     except (TimeoutError, InvalidEventError):
         event = None
+    except MessageTooBigError:
+        await websocket.close(CloseCode.MESSAGE_TOO_BIG)
+        return None
     if not isinstance(event, AuthEvent):
         await websocket.close(CloseCode.UNAUTHORIZED)
         return None
@@ -175,11 +187,19 @@ async def channel_ws(websocket: WebSocket, slug: str) -> None:
             messages=loaded.messages,
         )
         await connection.start(state)
+        rate_limit = TokenBucket(settings.WS_RATE_LIMIT_PER_SECOND, settings.WS_RATE_LIMIT_BURST)
         while True:
             try:
                 event = await _receive_event(websocket)
             except InvalidEventError as exc:
                 await connection.send(ErrorEvent(code="invalid_event", detail=str(exc)))
+                continue
+            except MessageTooBigError:
+                await connection.close(CloseCode.MESSAGE_TOO_BIG)
+                return
+            if not rate_limit.allow():
+                error = ErrorEvent(code="rate_limited", detail="Too many events, slow down")
+                await connection.send(error)
                 continue
             try:
                 await _handle_event(event, connection, manager, factory, slug, me)

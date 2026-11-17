@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 
 class CloseCode(IntEnum):
+    MESSAGE_TOO_BIG = 1009
     UNAUTHORIZED = 4401
     CHANNEL_NOT_FOUND = 4404
     REPLACED = 4409

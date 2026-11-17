@@ -4,6 +4,7 @@
 const CHANNEL_API = "/api/channels";
 const CHANNEL_MAX_LENGTH = 100000;
 const RECONNECT_MAX_DELAY = 15000;
+const CLOSE_MESSAGE_TOO_BIG = 1009;
 const CLOSE_UNAUTHORIZED = 4401;
 const CLOSE_NOT_FOUND = 4404;
 const CLOSE_REPLACED = 4409;
@@ -236,6 +237,8 @@ function errorText(event) {
       return "Отправлять может только отправитель";
     case "not_receiver":
       return "Вы уже отправитель";
+    case "rate_limited":
+      return "Слишком часто — подождите секунду";
     case "invalid_event":
       return `Сервер не принял сообщение: ${event.detail}`;
     default:
@@ -269,6 +272,9 @@ function handleClose(code) {
         },
       );
       return;
+  }
+  if (code === CLOSE_MESSAGE_TOO_BIG) {
+    showStatus("Сообщение слишком большое — сервер его не принял", "error");
   }
   // Обрыв связи (сон телефона, смена сети): переподключаемся с растущей паузой
   const delay = Math.min(1000 * 2 ** channel.retries, RECONNECT_MAX_DELAY);

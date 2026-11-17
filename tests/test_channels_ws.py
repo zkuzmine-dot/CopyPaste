@@ -357,3 +357,50 @@ def test_channel_deleted_by_cleanup_closes_on_next_action(client, channel, engin
         sender.send_json({"type": "send", "text": "в пустоту"})
         assert sender.receive_json() == {"type": "channel_closed", "reason": "idle"}
         expect_close(sender, 4410)
+
+
+# --- лимиты ---
+
+
+def test_rate_limit(client, channel, engine, monkeypatch):
+    monkeypatch.setattr(settings, "WS_RATE_LIMIT_BURST", 2)
+    monkeypatch.setattr(settings, "WS_RATE_LIMIT_PER_SECOND", 0.001)
+
+    with connect(client, channel["slug"]) as sender:
+        auth(sender, channel["sender"])
+        for i in range(3):
+            sender.send_json({"type": "send", "text": str(i)})
+        events = [sender.receive_json() for _ in range(3)]
+
+    assert [e.get("text") for e in events[:2]] == ["0", "1"]
+    assert events[2]["code"] == "rate_limited"
+    assert count_messages(engine) == 2
+
+
+def test_too_big_message_closes_1009(client, channel, engine, monkeypatch):
+    monkeypatch.setattr(settings, "WS_MAX_MESSAGE_BYTES", 100)
+
+    with connect(client, channel["slug"]) as sender:
+        auth(sender, channel["sender"])
+        sender.send_json({"type": "send", "text": "x" * 100})
+        expect_close(sender, 1009)
+
+    assert count_messages(engine) == 0
+
+
+def test_too_big_auth_closes_1009(client, channel, monkeypatch):
+    monkeypatch.setattr(settings, "WS_MAX_MESSAGE_BYTES", 100)
+
+    with connect(client, channel["slug"]) as ws:
+        ws.send_json({"type": "auth", "token": channel["sender"] + "x" * 100})
+        expect_close(ws, 1009)
+
+
+def test_size_limit_fits_longest_text(client, channel):
+    # Худший случай для JSON: каждый символ экранируется как \u0001 — 6 байт
+    text = "\u0001" * NOTE_TEXT_MAX_LENGTH
+
+    with connect(client, channel["slug"]) as sender:
+        auth(sender, channel["sender"])
+        sender.send_json({"type": "send", "text": text})
+        assert sender.receive_json()["text"] == text
