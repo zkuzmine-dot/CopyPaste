@@ -18,6 +18,9 @@ const shareUrlEl = document.getElementById("share-url");
 const shareCopyBtn = document.getElementById("share-copy");
 const shareQrEl = document.getElementById("share-qr");
 const shareQrDownload = document.getElementById("share-qr-download");
+const homeViewEl = document.getElementById("home-view");
+const noteViewEl = document.getElementById("note-view");
+const channelViewEl = document.getElementById("channel-view");
 
 let currentSlug = null;
 // Одноразовая заметка, которую ещё не показали: ждём подтверждения
@@ -250,17 +253,36 @@ async function shareLink() {
   }
 }
 
+function showView(name) {
+  homeViewEl.hidden = name !== "home";
+  noteViewEl.hidden = name !== "note";
+  channelViewEl.hidden = name !== "channel";
+}
+
 function route() {
+  statusEl.textContent = "";
+  const channelSlug = channelSlugFromPath();
+  if (channelSlug) {
+    showView("channel");
+    openChannel(channelSlug);
+    return;
+  }
+  leaveChannel();
+
   const slug = slugFromPath();
   if (slug) {
+    showView("note");
     loadNote(slug);
-  } else {
+  } else if (location.pathname === "/note") {
+    showView("note");
     pendingSlug = null;
     showEditor(true);
     textEl.value = "";
     updateCounter();
     setNote(null);
-    statusEl.textContent = "";
+    textEl.focus();
+  } else {
+    showView("home");
   }
 }
 

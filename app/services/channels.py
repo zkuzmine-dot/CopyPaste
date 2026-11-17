@@ -69,7 +69,10 @@ def join_channel(db: Session, slug: str) -> tuple[Participant, str]:
         raise ChannelNotFoundError
     if count_participants(db, channel) >= MAX_PARTICIPANTS:
         raise ChannelFullError
-    return _add_participant(db, channel, ParticipantRole.SENDER)
+    # Создатель мог стать отправителем, пока был в канале один
+    taken = db.scalars(select(Participant.role).where(Participant.channel_id == channel.id)).all()
+    role = ParticipantRole.RECEIVER if ParticipantRole.SENDER in taken else ParticipantRole.SENDER
+    return _add_participant(db, channel, role)
 
 
 def count_participants(db: Session, channel: Channel) -> int:

@@ -33,6 +33,7 @@ client_event_adapter: TypeAdapter[ClientEvent] = TypeAdapter(ClientEvent)
 class StateEvent(BaseModel):
     type: Literal["state"] = "state"
     role: ParticipantRole
+    peer_joined: bool
     peer_online: bool
     messages: list[MessageRead]
 

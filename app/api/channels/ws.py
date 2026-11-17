@@ -90,10 +90,24 @@ async def _authenticate(
     return result
 
 
-def _load_state(db: Session, participant_id: int) -> tuple[ParticipantRole, list[MessageRead]]:
+@dataclass(frozen=True)
+class LoadedState:
+    role: ParticipantRole
+    peer_joined: bool
+    messages: list[MessageRead]
+
+
+def _load_state(db: Session, participant_id: int) -> LoadedState:
     participant = db.get_one(Participant, participant_id)
-    messages = channels_service.get_live_messages(db, participant.channel)
-    return ParticipantRole(participant.role), [MessageRead.model_validate(m) for m in messages]
+    channel = participant.channel
+    return LoadedState(
+        role=ParticipantRole(participant.role),
+        peer_joined=channels_service.count_participants(db, channel)
+        == channels_service.MAX_PARTICIPANTS,
+        messages=[
+            MessageRead.model_validate(m) for m in channels_service.get_live_messages(db, channel)
+        ],
+    )
 
 
 def _add_message(db: Session, participant_id: int, text: str) -> MessageEvent:
@@ -141,9 +155,14 @@ async def channel_ws(websocket: WebSocket, slug: str) -> None:
     manager.watch(slug, lambda: _watch_idle(manager, factory, slug, identity.channel_id))
 
     try:
-        role, messages = await _run_db(factory, lambda db: _load_state(db, me))
-        peer_online = manager.is_peer_online(slug, me)
-        await connection.start(StateEvent(role=role, peer_online=peer_online, messages=messages))
+        loaded = await _run_db(factory, lambda db: _load_state(db, me))
+        state = StateEvent(
+            role=loaded.role,
+            peer_joined=loaded.peer_joined,
+            peer_online=manager.is_peer_online(slug, me),
+            messages=loaded.messages,
+        )
+        await connection.start(state)
         while True:
             try:
                 event = await _receive_event(websocket)

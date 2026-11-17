@@ -50,6 +50,15 @@ def test_join_channel(db, receiver):
     assert token
 
 
+def test_join_after_creator_became_sender(db, receiver):
+    channels_service.become_sender(db, receiver)
+
+    participant, _ = channels_service.join_channel(db, receiver.channel.slug)
+
+    assert receiver.role == ParticipantRole.SENDER
+    assert participant.role == ParticipantRole.RECEIVER
+
+
 def test_join_full_channel(db, sender):
     with pytest.raises(channels_service.ChannelFullError):
         channels_service.join_channel(db, sender.channel.slug)

@@ -62,7 +62,22 @@ def test_auth_returns_state(client, channel):
     with connect(client, channel["slug"]) as ws:
         state = auth(ws, channel["receiver"])
 
-    assert state == {"type": "state", "role": "receiver", "peer_online": False, "messages": []}
+    assert state == {
+        "type": "state",
+        "role": "receiver",
+        "peer_joined": True,
+        "peer_online": False,
+        "messages": [],
+    }
+
+
+def test_state_before_peer_joined(client):
+    created = client.post(URL).json()
+
+    with connect(client, created["slug"]) as ws:
+        state = auth(ws, created["token"])
+
+    assert state["peer_joined"] is False
 
 
 @pytest.mark.parametrize(
@@ -235,6 +250,25 @@ def test_become_sender_swaps_roles_for_both(client, channel):
         receiver.send_json({"type": "send", "text": "new sender"})
         assert receiver.receive_json()["text"] == "new sender"
         assert sender.receive_json()["text"] == "new sender"
+
+
+def test_become_sender_alone_then_peer_joins_as_receiver(client):
+    created = client.post(URL).json()
+
+    with connect(client, created["slug"]) as creator:
+        auth(creator, created["token"])
+        creator.send_json({"type": "become_sender"})
+        assert creator.receive_json() == {"type": "roles_changed", "role": "sender"}
+
+        joined = client.post(f"{URL}/{created['slug']}/join").json()
+        assert joined["role"] == "receiver"
+
+        with connect(client, created["slug"]) as peer:
+            assert auth(peer, joined["token"])["role"] == "receiver"
+            assert creator.receive_json()["type"] == "peer_status"
+
+            creator.send_json({"type": "send", "text": "от создателя"})
+            assert peer.receive_json()["text"] == "от создателя"
 
 
 def test_become_sender_by_sender_is_error(client, channel):
