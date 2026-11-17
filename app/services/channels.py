@@ -1,7 +1,8 @@
 from collections.abc import Sequence
 from datetime import timedelta
+from typing import Any, cast
 
-from sqlalchemy import ColumnElement, and_, func, select, update
+from sqlalchemy import ColumnElement, CursorResult, and_, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.channel import Channel, Message, Participant, ParticipantRole
@@ -149,3 +150,19 @@ def close_if_idle(db: Session, channel_id: int) -> float | None:
         )
     )
     return None if seconds_left is None else float(seconds_left)
+
+
+def delete_expired_messages(db: Session) -> int:
+    stmt = (
+        delete(Message)
+        .where(Message.expires_at <= func.now())
+        .execution_options(synchronize_session=False)
+    )
+    return cast(CursorResult[Any], db.execute(stmt)).rowcount
+
+
+def delete_inactive_channels(db: Session) -> int:
+    # Закрытые и бездействующие сразу: в них уже ничего нельзя сделать, а таймер в app
+    # мог потеряться при перезапуске. Участники и сообщения удаляются каскадом
+    stmt = delete(Channel).where(~_is_active()).execution_options(synchronize_session=False)
+    return cast(CursorResult[Any], db.execute(stmt)).rowcount

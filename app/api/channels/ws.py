@@ -97,8 +97,16 @@ class LoadedState:
     messages: list[MessageRead]
 
 
+def _get_participant(db: Session, participant_id: int) -> Participant:
+    # Чистка удаляет канал вместе с участниками, пока вкладка ещё открыта
+    participant = db.get(Participant, participant_id)
+    if participant is None:
+        raise channels_service.ChannelNotFoundError
+    return participant
+
+
 def _load_state(db: Session, participant_id: int) -> LoadedState:
-    participant = db.get_one(Participant, participant_id)
+    participant = _get_participant(db, participant_id)
     channel = participant.channel
     return LoadedState(
         role=ParticipantRole(participant.role),
@@ -111,12 +119,12 @@ def _load_state(db: Session, participant_id: int) -> LoadedState:
 
 
 def _add_message(db: Session, participant_id: int, text: str) -> MessageEvent:
-    message = channels_service.add_message(db, db.get_one(Participant, participant_id), text)
+    message = channels_service.add_message(db, _get_participant(db, participant_id), text)
     return MessageEvent.model_validate(message)
 
 
 def _become_sender(db: Session, participant_id: int) -> None:
-    channels_service.become_sender(db, db.get_one(Participant, participant_id))
+    channels_service.become_sender(db, _get_participant(db, participant_id))
 
 
 async def _close_if_idle(
@@ -155,7 +163,11 @@ async def channel_ws(websocket: WebSocket, slug: str) -> None:
     manager.watch(slug, lambda: _watch_idle(manager, factory, slug, identity.channel_id))
 
     try:
-        loaded = await _run_db(factory, lambda db: _load_state(db, me))
+        try:
+            loaded = await _run_db(factory, lambda db: _load_state(db, me))
+        except channels_service.ChannelNotFoundError:
+            await _close_if_idle(manager, factory, slug, identity.channel_id)
+            return
         state = StateEvent(
             role=loaded.role,
             peer_joined=loaded.peer_joined,

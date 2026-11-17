@@ -1,13 +1,15 @@
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import sessionmaker
 
 from app.db.models.channel import Channel, Message, Participant, ParticipantRole
 from app.services import channels as channels_service
+from app.settings import settings
 
 # Гонки видны только между настоящими параллельными транзакциями,
 # поэтому здесь реальные коммиты вместо общей транзакции с откатом из conftest
@@ -115,3 +117,57 @@ def test_send_during_role_swap_is_rejected(committed, monkeypatch):
     assert send_result.result() == "rejected"
     with factory() as db:
         assert db.scalars(select(Message).join(Channel).where(Channel.slug == slug)).all() == []
+
+
+def test_cleanup_waits_for_message_in_progress(committed, monkeypatch):
+    factory, created_channel_ids = committed
+    slug = create_committed_channel(factory, created_channel_ids)
+    with factory.begin() as db:
+        channels_service.join_channel(db, slug)
+
+    # Канал за 0,2 с до таймаута. Отправка проверила активность и «спит» в _touch,
+    # а за это время старая версия строки становится бездействующей. Без блокировки
+    # чистка удалила бы канал из-под отправки
+    monkeypatch.setattr(settings, "CHANNEL_IDLE_TIMEOUT_SECONDS", 1)
+    with factory.begin() as db:
+        db.execute(
+            update(Channel)
+            .where(Channel.slug == slug)
+            .values(last_activity_at=func.now() - timedelta(seconds=0.8))
+        )
+
+    send_holds_lock = threading.Event()
+    original_touch = channels_service._touch
+
+    def slow_touch(db, channel_id):
+        send_holds_lock.set()
+        time.sleep(RACE_WINDOW + 0.3)
+        original_touch(db, channel_id)
+
+    monkeypatch.setattr(channels_service, "_touch", slow_touch)
+
+    def send() -> None:
+        with factory.begin() as db:
+            sender = db.execute(
+                select(Participant)
+                .join(Channel)
+                .where(Channel.slug == slug, Participant.role == ParticipantRole.SENDER)
+            ).scalar_one()
+            channels_service.add_message(db, sender, "just in time")
+
+    def cleanup() -> int:
+        send_holds_lock.wait()
+        time.sleep(RACE_WINDOW)
+        with factory.begin() as db:
+            return channels_service.delete_inactive_channels(db)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        sent = pool.submit(send)
+        deleted = pool.submit(cleanup)
+        sent.result()
+
+    assert deleted.result() == 0
+    with factory() as db:
+        assert db.scalars(select(Message.text).join(Channel).where(Channel.slug == slug)).all() == [
+            "just in time"
+        ]

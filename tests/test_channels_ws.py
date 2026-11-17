@@ -11,6 +11,7 @@ from app.api.channels import ws as channels_ws
 from app.db.models.channel import Channel, Message
 from app.main import app
 from app.schemas.note import NOTE_TEXT_MAX_LENGTH
+from app.services import channels as channels_service
 from app.settings import settings
 
 URL = "/api/channels"
@@ -342,3 +343,17 @@ def test_activity_postpones_idle_close(client, channel, monkeypatch):
             assert sender.receive_json()["text"] == str(i)
 
         assert sender.receive_json() == {"type": "channel_closed", "reason": "idle"}
+
+
+def test_channel_deleted_by_cleanup_closes_on_next_action(client, channel, engine):
+    with connect(client, channel["slug"]) as sender:
+        auth(sender, channel["sender"])
+        with sessionmaker(bind=engine).begin() as db:
+            channels_service.close_channel(
+                db, channels_service.get_active_channel(db, channel["slug"])
+            )
+            assert channels_service.delete_inactive_channels(db) == 1
+
+        sender.send_json({"type": "send", "text": "в пустоту"})
+        assert sender.receive_json() == {"type": "channel_closed", "reason": "idle"}
+        expect_close(sender, 4410)

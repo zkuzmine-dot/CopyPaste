@@ -228,3 +228,41 @@ def test_close_if_idle_on_closed_channel(db, receiver):
     channels_service.close_channel(db, receiver.channel)
 
     assert channels_service.close_if_idle(db, receiver.channel_id) is None
+
+
+# --- чистка ---
+
+
+def test_delete_expired_messages(db, sender):
+    expired = channels_service.add_message(db, sender, "old")
+    live = channels_service.add_message(db, sender, "new")
+    db.execute(
+        update(Message)
+        .where(Message.id == expired.id)
+        .values(expires_at=func.now() - timedelta(seconds=1))
+    )
+
+    assert channels_service.delete_expired_messages(db) == 1
+    assert db.scalars(select(Message.id)).all() == [live.id]
+
+
+def test_delete_inactive_channels(db, sender):
+    channels_service.add_message(db, sender, "text")
+    idle, _ = channels_service.create_channel(db)
+    closed, _ = channels_service.create_channel(db)
+    set_last_activity(db, idle.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
+    channels_service.close_channel(db, closed.channel)
+    set_last_activity(db, sender.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
+
+    assert channels_service.delete_inactive_channels(db) == 3
+    assert db.scalars(select(Channel.id)).all() == []
+    # Каскад: участники и сообщения ушли вместе с каналами
+    assert db.scalars(select(Participant.id)).all() == []
+    assert db.scalars(select(Message.id)).all() == []
+
+
+def test_delete_inactive_channels_keeps_active(db, sender):
+    set_last_activity(db, sender.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS - 10)
+
+    assert channels_service.delete_inactive_channels(db) == 0
+    assert db.scalars(select(func.count()).select_from(Participant)).one() == 2

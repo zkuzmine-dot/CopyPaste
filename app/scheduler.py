@@ -4,7 +4,7 @@ import signal
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.db.connection import create_db_engine, create_session_factory
-from app.jobs.cleanup import run_cleanup
+from app.jobs.cleanup import run_channels_cleanup, run_cleanup
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -28,11 +28,24 @@ def main() -> None:
         max_instances=1,  # не запускать новый проход, пока не закончился предыдущий
         coalesce=True,  # пропущенные запуски (например, после паузы) выполнить один раз
     )
+    scheduler.add_job(
+        run_channels_cleanup,
+        "interval",
+        seconds=settings.CHANNEL_CLEANUP_INTERVAL_SECONDS,
+        args=[session_factory],
+        id="cleanup_channels",
+        max_instances=1,
+        coalesce=True,
+    )
 
     # docker stop шлёт SIGTERM: останавливаемся сразу
     signal.signal(signal.SIGTERM, lambda *_: scheduler.shutdown(wait=False))
 
-    logger.info("Scheduler started, cleanup every %d s", settings.CLEANUP_INTERVAL_SECONDS)
+    logger.info(
+        "Scheduler started: notes cleanup every %d s, channels cleanup every %d s",
+        settings.CLEANUP_INTERVAL_SECONDS,
+        settings.CHANNEL_CLEANUP_INTERVAL_SECONDS,
+    )
     try:
         scheduler.start()
     except KeyboardInterrupt:
