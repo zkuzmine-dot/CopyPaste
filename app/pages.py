@@ -14,7 +14,17 @@ def index() -> FileResponse:
     return FileResponse(INDEX_HTML)
 
 
+@router.get("/note")
+def new_note_page() -> FileResponse:
+    return FileResponse(INDEX_HTML)
+
+
 # Заметку загружает JS по slug из адреса, поэтому сервер отдаёт ту же страницу
 @router.get("/n/{slug}")
 def note_page(slug: str) -> FileResponse:
+    return FileResponse(INDEX_HTML)
+
+
+@router.get("/c/{slug}")
+def channel_page(slug: str) -> FileResponse:
     return FileResponse(INDEX_HTML)

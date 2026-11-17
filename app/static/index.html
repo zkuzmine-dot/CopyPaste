@@ -10,58 +10,142 @@
   <main class="page">
     <header class="header">
       <a class="logo" href="/">CopyPaste</a>
-      <a class="new-link" href="/">Новая заметка</a>
+      <a class="new-link" href="/note">Новая заметка</a>
     </header>
 
-    <section id="burn-confirm" class="burn-confirm" hidden>
-      <h2 class="burn-confirm-title">Эта заметка удалится сразу после просмотра</h2>
-      <p class="burn-confirm-text">
-        Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
-      </p>
-      <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
-    </section>
-
-    <div id="editor-area" class="editor-area">
-      <textarea
-        id="text"
-        class="editor"
-        placeholder="Вставьте или напишите текст…"
-        maxlength="100000"
-        spellcheck="false"
-        autofocus
-      ></textarea>
-
-      <div class="meta">
-        <span id="info" class="info"></span>
-        <span id="counter" class="counter">0 / 100 000</span>
+    <section id="home-view" class="home" hidden>
+      <h1 class="home-title">Что хотите сделать?</h1>
+      <div class="choices">
+        <button id="choose-channel" class="choice" type="button">
+          <span class="choice-title">Обмен между устройствами</span>
+          <span class="choice-text">
+            Откройте канал на втором устройстве по QR-коду — текст будет приходить мгновенно
+            и исчезать через минуту.
+          </span>
+        </button>
+        <a class="choice" href="/note">
+          <span class="choice-title">Сохранить заметку</span>
+          <span class="choice-text">
+            Сохраните текст и поделитесь ссылкой. Можно задать срок хранения
+            или удалить после прочтения.
+          </span>
+        </a>
       </div>
 
-      <div class="toolbar">
-        <div class="options">
-          <label class="expiry">
-            <span>Хранить</span>
-            <select id="expiry">
-              <option value="0">навсегда</option>
-              <option value="600">10 минут</option>
-              <option value="3600">1 час</option>
-              <option value="86400">1 день</option>
-              <option value="604800">1 неделю</option>
-            </select>
-          </label>
+      <form id="join-form" class="join-form">
+        <label class="join-label" for="join-code">Уже есть код канала?</label>
+        <div class="share-link-row">
+          <input
+            id="join-code"
+            class="share-url"
+            type="text"
+            placeholder="Код из 8 символов или ссылка"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+            maxlength="200"
+          >
+          <button class="button primary" type="submit">Подключиться</button>
+        </div>
+      </form>
+    </section>
 
-          <label class="burn">
-            <input id="burn" type="checkbox">
-            <span>Удалить после прочтения</span>
-          </label>
+    <div id="note-view" class="note-view" hidden>
+      <section id="burn-confirm" class="burn-confirm" hidden>
+        <h2 class="burn-confirm-title">Эта заметка удалится сразу после просмотра</h2>
+        <p class="burn-confirm-text">
+          Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
+        </p>
+        <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
+      </section>
+
+      <div id="editor-area" class="editor-area">
+        <textarea
+          id="text"
+          class="editor"
+          placeholder="Вставьте или напишите текст…"
+          maxlength="100000"
+          spellcheck="false"
+        ></textarea>
+
+        <div class="meta">
+          <span id="info" class="info"></span>
+          <span id="counter" class="counter">0 / 100 000</span>
         </div>
 
-        <div class="buttons">
-          <button id="save" class="button primary" type="button">Сохранить</button>
-          <button id="copy" class="button" type="button">Скопировать</button>
-          <button id="share" class="button" type="button" disabled>Поделиться</button>
+        <div class="toolbar">
+          <div class="options">
+            <label class="expiry">
+              <span>Хранить</span>
+              <select id="expiry">
+                <option value="0">навсегда</option>
+                <option value="600">10 минут</option>
+                <option value="3600">1 час</option>
+                <option value="86400">1 день</option>
+                <option value="604800">1 неделю</option>
+              </select>
+            </label>
+
+            <label class="burn">
+              <input id="burn" type="checkbox">
+              <span>Удалить после прочтения</span>
+            </label>
+          </div>
+
+          <div class="buttons">
+            <button id="save" class="button primary" type="button">Сохранить</button>
+            <button id="copy" class="button" type="button">Скопировать</button>
+            <button id="share" class="button" type="button" disabled>Поделиться</button>
+          </div>
         </div>
       </div>
     </div>
+
+    <section id="channel-view" class="channel" hidden>
+      <div class="channel-bar">
+        <span id="channel-role" class="role-badge"></span>
+        <span id="channel-conn" class="conn"></span>
+        <button id="become-sender" class="button" type="button" hidden>Стать отправителем</button>
+      </div>
+
+      <div id="channel-invite" class="invite" hidden>
+        <img id="channel-qr" class="share-qr" alt="QR-код для второго устройства" width="232" height="232">
+        <div class="invite-body">
+          <h2 class="invite-title">Ждём второе устройство</h2>
+          <p class="invite-hint">Отсканируйте QR-код камерой телефона или откройте ссылку.</p>
+          <p class="invite-hint">
+            Или введите код на главной странице: <span id="channel-code" class="channel-code"></span>
+          </p>
+          <div class="share-link-row">
+            <input id="channel-url" class="share-url" type="text" readonly>
+            <button id="channel-url-copy" class="button" type="button">Скопировать</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="channel-compose" class="compose" hidden>
+        <textarea
+          id="channel-text"
+          class="editor compose-editor"
+          placeholder="Текст для второго устройства… (Ctrl+Enter — отправить)"
+          maxlength="100000"
+          spellcheck="false"
+        ></textarea>
+        <div class="compose-actions">
+          <span id="channel-counter" class="counter">0 / 100 000</span>
+          <button id="channel-send" class="button primary" type="button">Отправить</button>
+        </div>
+      </div>
+
+      <p id="feed-empty" class="feed-empty">Сообщений пока нет. Каждое живёт одну минуту.</p>
+      <ul id="feed" class="feed"></ul>
+
+      <div id="channel-closed" class="burn-confirm" hidden>
+        <h2 id="closed-title" class="burn-confirm-title"></h2>
+        <p id="closed-text" class="burn-confirm-text"></p>
+        <button id="closed-action" class="button primary" type="button"></button>
+      </div>
+    </section>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
@@ -88,6 +172,7 @@
     </div>
   </dialog>
 
+  <script src="/static/channel.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

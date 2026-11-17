@@ -4,6 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.db.base import Base
+from app.db.models.channel import Channel, Message, Participant  # noqa: F401
 from app.db.models.note import Note  # noqa: F401 — регистрирует модель в Base.metadata
 from app.settings import settings
 
