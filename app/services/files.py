@@ -1,17 +1,32 @@
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import cast
 
-from sqlalchemy import ColumnElement, and_, delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.file import FileOrigin, StoredFile
+from app.db.models.note import Note
 from app.settings import settings
 
 GC_BATCH_SIZE = 500
 
 
-def _has_owner() -> ColumnElement[bool]:
-    return or_(StoredFile.note_id.is_not(None), StoredFile.message_id.is_not(None))
+class FilesNotAvailableError(Exception):
+    """Часть файлов не найдена, уже привязана или просрочена. Транзакцию нужно откатить."""
+
+
+def _owner_is_alive() -> ColumnElement[bool]:
+    # Истёкшая заметка живёт в БД до прохода чистки — её файлы отдавать уже нельзя
+    note_alive = (
+        select(Note.id)
+        .where(
+            Note.id == StoredFile.note_id,
+            or_(Note.expires_at.is_(None), Note.expires_at > func.now()),
+        )
+        .exists()
+    )
+    return or_(note_alive, StoredFile.message_id.is_not(None))
 
 
 def _is_garbage() -> ColumnElement[bool]:
@@ -55,9 +70,53 @@ def total_size(db: Session) -> int:
 def get_available_file(db: Session, public_id: str) -> StoredFile | None:
     stmt = select(StoredFile).where(
         StoredFile.public_id == public_id,
-        or_(_has_owner(), StoredFile.keep_until > func.now()),
+        or_(_owner_is_alive(), StoredFile.keep_until > func.now()),
     )
     return db.execute(stmt).scalar_one_or_none()
+
+
+def attach_to_note(db: Session, note_id: int, public_ids: Sequence[str]) -> None:
+    if not public_ids:
+        return
+    positions = {public_id: i for i, public_id in enumerate(public_ids)}
+    # Все условия «файл свободен» — в самом UPDATE: если два запроса привязывают один файл,
+    # второй дождётся блокировки строки, перепроверит условия и файл уже не получит
+    stmt = (
+        update(StoredFile)
+        .where(
+            StoredFile.public_id.in_(public_ids),
+            StoredFile.origin == FileOrigin.NOTE,
+            StoredFile.note_id.is_(None),
+            StoredFile.message_id.is_(None),
+            StoredFile.keep_until > func.now(),
+        )
+        .values(
+            note_id=note_id,
+            keep_until=None,
+            position=case(positions, value=StoredFile.public_id),
+        )
+        .returning(StoredFile.id)
+        .execution_options(synchronize_session=False)
+    )
+    if len(db.scalars(stmt).all()) != len(public_ids):
+        raise FilesNotAvailableError
+
+
+def files_of_note(db: Session, note_id: int) -> Sequence[StoredFile]:
+    stmt = select(StoredFile).where(StoredFile.note_id == note_id).order_by(StoredFile.position)
+    return db.scalars(stmt).all()
+
+
+def release_for_burn(db: Session, note_id: int) -> list[StoredFile]:
+    """Перед удалением одноразовой заметки: файлы живут ещё окно и удаляются после скачивания."""
+    window = timedelta(seconds=settings.BURN_NOTE_FILES_WINDOW_SECONDS)
+    stmt = (
+        update(StoredFile)
+        .where(StoredFile.note_id == note_id)
+        .values(keep_until=func.now() + window, delete_after_download=True)
+        .returning(StoredFile)
+    )
+    return sorted(db.scalars(stmt).all(), key=lambda stored: stored.position or 0)
 
 
 def delete_file(db: Session, file_id: int) -> str | None:
