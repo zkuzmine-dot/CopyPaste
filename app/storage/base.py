@@ -1,8 +1,12 @@
 import re
 import secrets
-from collections.abc import AsyncIterable, Iterator
+from collections.abc import AsyncIterable, Iterator, Mapping
 from datetime import timedelta
 from typing import Protocol
+
+from starlette.responses import Response
+
+from app.storage.responses import OnComplete
 
 # ab/cd/abcd...: папки — первые символы самого имени. Только [0-9a-f] и "/",
 # поэтому из ключа нельзя собрать путь за пределы хранилища
@@ -29,6 +33,17 @@ def is_valid_key(key: str) -> bool:
 class FileStorage(Protocol):
     async def save(self, key: str, chunks: AsyncIterable[bytes], max_bytes: int) -> int:
         """Сохраняет поток целиком или не сохраняет ничего. Возвращает размер в байтах."""
+        ...
+
+    def download(
+        self,
+        key: str,
+        *,
+        media_type: str,
+        headers: Mapping[str, str],
+        on_complete: OnComplete | None = None,
+    ) -> Response:
+        """Ответ с файлом. FileNotFoundError, если байтов нет. on_complete — после полной отдачи."""
         ...
 
     def delete(self, key: str) -> None: ...

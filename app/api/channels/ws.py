@@ -1,12 +1,11 @@
 import asyncio
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
-from starlette.concurrency import run_in_threadpool
 
+from app.db.connection import run_db
 from app.db.models.channel import Participant, ParticipantRole
 from app.realtime.manager import ChannelManager, CloseCode, Connection
 from app.realtime.rate_limit import TokenBucket
@@ -42,15 +41,6 @@ class InvalidEventError(Exception):
 
 class MessageTooBigError(Exception):
     pass
-
-
-async def _run_db[T](factory: sessionmaker[Session], fn: Callable[[Session], T]) -> T:
-    # Сессия на событие, а не на всё соединение; синхронная БД — в пуле потоков
-    def call() -> T:
-        with factory() as db, db.begin():
-            return fn(db)
-
-    return await run_in_threadpool(call)
 
 
 async def _receive_event(websocket: WebSocket) -> ClientEvent:
@@ -95,7 +85,7 @@ async def _authenticate(
         await websocket.close(CloseCode.UNAUTHORIZED)
         return None
     token = event.token
-    result = await _run_db(factory, lambda db: _identify(db, slug, token))
+    result = await run_db(factory, lambda db: _identify(db, slug, token))
     if isinstance(result, CloseCode):
         await websocket.close(result)
         return None
@@ -142,7 +132,7 @@ def _become_sender(db: Session, participant_id: int) -> None:
 async def _close_if_idle(
     manager: ChannelManager, factory: sessionmaker[Session], slug: str, channel_id: int
 ) -> float | None:
-    seconds_left = await _run_db(factory, lambda db: channels_service.close_if_idle(db, channel_id))
+    seconds_left = await run_db(factory, lambda db: channels_service.close_if_idle(db, channel_id))
     if seconds_left is None:
         await manager.close_room(slug, ChannelClosedEvent(reason="idle"), CloseCode.CHANNEL_CLOSED)
     return seconds_left
@@ -176,7 +166,7 @@ async def channel_ws(websocket: WebSocket, slug: str) -> None:
 
     try:
         try:
-            loaded = await _run_db(factory, lambda db: _load_state(db, me))
+            loaded = await run_db(factory, lambda db: _load_state(db, me))
         except channels_service.ChannelNotFoundError:
             await _close_if_idle(manager, factory, slug, identity.channel_id)
             return
@@ -223,7 +213,7 @@ async def _handle_event(
     match event:
         case SendEvent(text=text):
             try:
-                message = await _run_db(factory, lambda db: _add_message(db, me, text))
+                message = await run_db(factory, lambda db: _add_message(db, me, text))
             except channels_service.ActionNotAllowedError:
                 error = ErrorEvent(code="not_sender", detail="Only the sender can send messages")
                 await connection.send(error)
@@ -231,7 +221,7 @@ async def _handle_event(
             await manager.broadcast(slug, message)
         case BecomeSenderEvent():
             try:
-                await _run_db(factory, lambda db: _become_sender(db, me))
+                await run_db(factory, lambda db: _become_sender(db, me))
             except channels_service.ActionNotAllowedError:
                 error = ErrorEvent(code="not_receiver", detail="You are already the sender")
                 await connection.send(error)

@@ -1,9 +1,10 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Annotated
 
 from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.concurrency import run_in_threadpool
 
 from app.settings import settings
 
@@ -35,3 +36,17 @@ def get_db(request: Request) -> Iterator[Session]:
 
 # scope="function": коммит выполняется до отправки ответа, а не после
 DbSession = Annotated[Session, Depends(get_db, scope="function")]
+
+
+async def run_db[T](factory: sessionmaker[Session], fn: Callable[[Session], T]) -> T:
+    """Короткая транзакция в пуле потоков.
+
+    Для кода, который не может держать DbSession всё время запроса: WebSocket, загрузка и
+    скачивание файлов. fn должна вернуть готовые данные — после коммита объекты ORM протухают.
+    """
+
+    def call() -> T:
+        with factory() as db, db.begin():
+            return fn(db)
+
+    return await run_in_threadpool(call)

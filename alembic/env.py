@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.db.base import Base
 from app.db.models.channel import Channel, Message, Participant  # noqa: F401
+from app.db.models.file import StoredFile  # noqa: F401
 from app.db.models.note import Note  # noqa: F401 — регистрирует модель в Base.metadata
 from app.settings import settings
 
@@ -19,7 +20,9 @@ if not config.get_main_option("sqlalchemy.url"):
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Миграции запускаются и из кода (тесты): без этого флага fileConfig отключил бы
+    # все логгеры приложения, созданные до миграций
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
