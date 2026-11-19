@@ -195,3 +195,11 @@ def test_deleted_channel_leaves_file_for_collector(db, message):
 
     assert stored.message_id is None
     assert files_service.collect_garbage(db) == [stored.storage_key]
+
+
+def test_known_keys(db):
+    stored = make_file(db)
+
+    assert files_service.known_keys(db, [stored.storage_key, new_storage_key()]) == {
+        stored.storage_key
+    }

@@ -79,3 +79,18 @@ class LocalFileStorage:
                 continue
             if mtime < cutoff:
                 yield key
+
+    def delete_stale_partial_uploads(self, age: timedelta) -> int:
+        # .part остаётся, только если процесс упал посреди загрузки: при обычной ошибке
+        # или отмене его удаляет save. Время изменения обновляет каждая запись в файл,
+        # поэтому идущую загрузку это не заденет
+        cutoff = time.time() - age.total_seconds()
+        deleted = 0
+        for part in self._tmp.glob("*.part"):
+            try:
+                if part.stat().st_mtime < cutoff:
+                    part.unlink()
+                    deleted += 1
+            except FileNotFoundError:
+                continue
+        return deleted

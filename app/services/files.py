@@ -81,6 +81,11 @@ def total_size(db: Session) -> int:
     return cast(int, db.scalar(select(func.coalesce(func.sum(StoredFile.size_bytes), 0))))
 
 
+def known_keys(db: Session, storage_keys: Sequence[str]) -> set[str]:
+    stmt = select(StoredFile.storage_key).where(StoredFile.storage_key.in_(storage_keys))
+    return set(db.scalars(stmt))
+
+
 def get_available_file(db: Session, public_id: str) -> StoredFile | None:
     stmt = select(StoredFile).where(
         StoredFile.public_id == public_id,

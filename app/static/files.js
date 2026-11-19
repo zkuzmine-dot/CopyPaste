@@ -4,6 +4,9 @@
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const CONFIRM_ATTEMPTS = 3;
+const CONFIRM_TIMEOUT_MS = 10000;
+// Столько ждём следующей порции данных, прежде чем считать соединение зависшим
+const STALL_TIMEOUT_MS = 15000;
 
 class FileGoneError extends Error {}
 
@@ -258,7 +261,10 @@ function saveBlob(blob, name) {
 async function confirmReceived(url) {
   for (let attempt = 1; attempt <= CONFIRM_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(url, { method: "POST" });
+      const response = await fetch(url, {
+        method: "POST",
+        signal: AbortSignal.timeout(CONFIRM_TIMEOUT_MS),
+      });
       if (response.ok) {
         return;
       }
@@ -290,28 +296,42 @@ class OneTimeDownload {
   }
 
   async fetchRest() {
-    const headers = this.received ? { Range: `bytes=${this.received}-` } : {};
-    const response = await fetch(this.file.download_url, { headers });
-    if (response.status === 403 || response.status === 410) {
-      throw new FileGoneError("Файл больше недоступен");
-    }
-    if (!response.ok) {
-      throw new Error(`Ошибка сервера (${response.status})`);
-    }
-    if (response.status === 200 && this.received) {
-      // Сервер прислал файл с начала — начинаем заново
-      this.chunks = [];
-      this.received = 0;
-    }
-    const reader = response.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
+    // У fetch нет таймаута: зависшее соединение (данных нет, но и обрыва нет) ждало бы
+    // вечно. Сторож прерывает его, если данные не приходят STALL_TIMEOUT_MS
+    const controller = new AbortController();
+    let watchdog;
+    const rearm = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
+    };
+    rearm();
+    try {
+      const headers = this.received ? { Range: `bytes=${this.received}-` } : {};
+      const response = await fetch(this.file.download_url, { headers, signal: controller.signal });
+      if (response.status === 403 || response.status === 410) {
+        throw new FileGoneError("Файл больше недоступен");
       }
-      this.chunks.push(value);
-      this.received += value.length;
-      this.onProgress?.(this.received / this.file.size);
+      if (!response.ok) {
+        throw new Error(`Ошибка сервера (${response.status})`);
+      }
+      if (response.status === 200 && this.received) {
+        // Сервер прислал файл с начала — начинаем заново
+        this.chunks = [];
+        this.received = 0;
+      }
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        rearm();
+        if (done) {
+          break;
+        }
+        this.chunks.push(value);
+        this.received += value.length;
+        this.onProgress?.(this.received / this.file.size);
+      }
+    } finally {
+      clearTimeout(watchdog);
     }
     if (this.received < this.file.size) {
       throw new Error("Связь оборвалась");

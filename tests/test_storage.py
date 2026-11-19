@@ -200,3 +200,25 @@ async def test_keys_older_than(file_storage):
 
 def test_keys_older_than_on_empty_storage(file_storage):
     assert list(file_storage.keys_older_than(timedelta(0))) == []
+
+
+# --- недописанные загрузки ---
+
+
+def test_delete_stale_partial_uploads(file_storage):
+    tmp = file_storage.root / "tmp"
+    tmp.mkdir(parents=True)
+    old_part, fresh_part, not_a_part = tmp / "old.part", tmp / "fresh.part", tmp / "note.txt"
+    for path in (old_part, fresh_part, not_a_part):
+        path.write_bytes(b"x")
+    make_old(old_part)
+    make_old(not_a_part)
+
+    assert file_storage.delete_stale_partial_uploads(timedelta(minutes=30)) == 1
+    assert not old_part.exists()
+    assert fresh_part.exists()
+    assert not_a_part.exists()
+
+
+def test_delete_stale_partial_uploads_on_empty_storage(file_storage):
+    assert file_storage.delete_stale_partial_uploads(timedelta(0)) == 0
