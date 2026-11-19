@@ -4,11 +4,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from redis import Redis
 from sqlalchemy import create_engine, make_url, text
 from sqlalchemy.orm import sessionmaker
 
 from app.api.files.routes import create_upload_rate_limiter
+from app.db.redis import create_redis
 from app.main import app
 from app.settings import settings
 from app.storage.local import LocalFileStorage
@@ -75,7 +75,7 @@ def file_storage(tmp_path) -> LocalFileStorage:
 
 @pytest.fixture
 def redis_client():
-    client = Redis.from_url(TEST_REDIS_URL)
+    client = create_redis(TEST_REDIS_URL)
     client.flushdb()
     yield client
     client.flushdb()

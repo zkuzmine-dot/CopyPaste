@@ -3,15 +3,17 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from redis import Redis
 
 from app.api.channels.routes import router as channels_router
 from app.api.channels.ws import router as channels_ws_router
+from app.api.errors import validation_error_without_secrets
 from app.api.files.routes import create_upload_rate_limiter
 from app.api.files.routes import router as files_router
 from app.api.notes.routes import router as notes_router
 from app.db.connection import create_db_engine, create_session_factory
+from app.db.redis import create_redis
 from app.pages import STATIC_DIR
 from app.pages import router as pages_router
 from app.realtime.manager import ChannelManager
@@ -29,13 +31,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.upload_rate_limiter = create_upload_rate_limiter()
     # Соединение откроется при первой команде: без Redis приложение стартует,
     # а отказывают только операции, которым он нужен
-    app.state.redis = Redis.from_url(settings.REDIS_URL)
+    app.state.redis = create_redis(settings.REDIS_URL)
     yield
     app.state.redis.close()
     engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_exception_handler(RequestValidationError, validation_error_without_secrets)  # type: ignore[arg-type]
 app.include_router(notes_router)
 app.include_router(channels_router)
 app.include_router(channels_ws_router)
