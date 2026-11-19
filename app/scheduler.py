@@ -5,7 +5,9 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.db.connection import create_db_engine, create_session_factory
 from app.jobs.cleanup import run_channels_cleanup, run_cleanup
+from app.jobs.files import run_disk_sweep, run_files_gc
 from app.settings import settings
+from app.storage.local import LocalFileStorage
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,8 @@ def main() -> None:
 
     engine = create_db_engine()
     session_factory = create_session_factory(engine)
+
+    storage = LocalFileStorage(settings.FILES_DIR)
 
     scheduler = BlockingScheduler(timezone="UTC")
     scheduler.add_job(
@@ -37,14 +41,35 @@ def main() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        run_files_gc,
+        "interval",
+        seconds=settings.FILES_GC_INTERVAL_SECONDS,
+        args=[session_factory, storage],
+        id="cleanup_files",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        run_disk_sweep,
+        "interval",
+        seconds=settings.FILES_DISK_SWEEP_INTERVAL_SECONDS,
+        args=[session_factory, storage],
+        id="sweep_files_disk",
+        max_instances=1,
+        coalesce=True,
+    )
 
     # docker stop шлёт SIGTERM: останавливаемся сразу
     signal.signal(signal.SIGTERM, lambda *_: scheduler.shutdown(wait=False))
 
     logger.info(
-        "Scheduler started: notes cleanup every %d s, channels cleanup every %d s",
+        "Scheduler started: notes cleanup every %d s, channels cleanup every %d s, "
+        "files cleanup every %d s, disk sweep every %d s",
         settings.CLEANUP_INTERVAL_SECONDS,
         settings.CHANNEL_CLEANUP_INTERVAL_SECONDS,
+        settings.FILES_GC_INTERVAL_SECONDS,
+        settings.FILES_DISK_SWEEP_INTERVAL_SECONDS,
     )
     try:
         scheduler.start()

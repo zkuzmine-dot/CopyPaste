@@ -1,13 +1,24 @@
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.db.models.file import StoredFile
 from app.db.models.note import Note
 from app.schemas.note import NoteCreate, NoteUpdate
+from app.services import files as files_service
+
+
+@dataclass(frozen=True)
+class NoteWithFiles:
+    note: Note
+    files: Sequence[StoredFile]
 
 
 def create_note(db: Session, payload: NoteCreate) -> Note:
+    """FilesNotAvailableError, если часть файлов привязать нельзя: транзакцию нужно откатить."""
     note = Note(
         text=payload.text,
         expires_at=payload.expires_at,
@@ -16,6 +27,7 @@ def create_note(db: Session, payload: NoteCreate) -> Note:
     db.add(note)
     # id и created_at приходят из INSERT ... RETURNING, refresh не нужен
     db.flush()
+    files_service.attach_to_note(db, note.id, payload.file_ids)
     return note
 
 
@@ -28,15 +40,25 @@ def get_note_by_slug(db: Session, slug: str) -> Note | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
-def read_note(db: Session, slug: str) -> Note | None:
+def _lock_note(db: Session, note_id: int) -> bool:
+    stmt = select(Note.id).where(Note.id == note_id).with_for_update()
+    return db.execute(stmt).first() is not None
+
+
+def read_note(db: Session, slug: str) -> NoteWithFiles | None:
     note = get_note_by_slug(db, slug)
-    if note is None or not note.burn_after_read:
-        return note
-    # Два одновременных читателя оба увидят заметку в SELECT, но DELETE строки
-    # пройдёт только у одного: второй дождётся блокировки и удалит 0 строк
-    stmt = delete(Note).where(Note.id == note.id).execution_options(synchronize_session=False)
-    result = cast(CursorResult[Any], db.execute(stmt))
-    return note if result.rowcount == 1 else None
+    if note is None:
+        return None
+    if not note.burn_after_read:
+        return NoteWithFiles(note, files_service.files_of_note(db, note.id))
+    # Сначала блокируем заметку, потом файлы — в том же порядке, что и DELETE заметки
+    # (сама строка, потом SET NULL у файлов). Иначе встречные блокировки дали бы deadlock.
+    # Второй одновременный читатель дождётся блокировки и строки уже не найдёт
+    if not _lock_note(db, note.id):
+        return None
+    files = files_service.release_for_burn(db, note.id)
+    db.execute(delete(Note).where(Note.id == note.id).execution_options(synchronize_session=False))
+    return NoteWithFiles(note, files)
 
 
 def update_note(db: Session, note: Note, payload: NoteUpdate) -> Note:

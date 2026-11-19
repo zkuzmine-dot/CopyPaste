@@ -1,7 +1,18 @@
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+from app.schemas.file import LinkedFileRead
+from app.settings import settings
 
 NOTE_TEXT_MAX_LENGTH = 100_000
 
@@ -18,10 +29,22 @@ NoteText = Annotated[str, Field(min_length=1, max_length=NOTE_TEXT_MAX_LENGTH)]
 ExpiresAt = Annotated[AwareDatetime, AfterValidator(_must_be_future)]
 
 
+FileId = Annotated[str, Field(min_length=1, max_length=64)]
+
+
 class NoteCreate(BaseModel):
-    text: NoteText
+    text: Annotated[str, Field(max_length=NOTE_TEXT_MAX_LENGTH)] = ""
+    file_ids: Annotated[list[FileId], Field(max_length=settings.NOTE_MAX_FILES)] = []
     expires_at: ExpiresAt | None = None
     burn_after_read: bool = False
+
+    @model_validator(mode="after")
+    def text_or_files(self) -> Self:
+        if not self.text and not self.file_ids:
+            raise ValueError("Note needs text or files")
+        if len(set(self.file_ids)) != len(self.file_ids):
+            raise ValueError("file_ids must be unique")
+        return self
 
 
 class NoteUpdate(BaseModel):
@@ -47,3 +70,4 @@ class NoteRead(BaseModel):
     updated_at: datetime
     expires_at: datetime | None
     burn_after_read: bool
+    files: list[LinkedFileRead]

@@ -7,12 +7,15 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.channels.routes import router as channels_router
 from app.api.channels.ws import router as channels_ws_router
+from app.api.files.routes import create_upload_rate_limiter
+from app.api.files.routes import router as files_router
 from app.api.notes.routes import router as notes_router
 from app.db.connection import create_db_engine, create_session_factory
 from app.pages import STATIC_DIR
 from app.pages import router as pages_router
 from app.realtime.manager import ChannelManager
 from app.settings import settings
+from app.storage.local import LocalFileStorage
 
 
 @asynccontextmanager
@@ -21,6 +24,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.channel_manager = ChannelManager()
+    app.state.file_storage = LocalFileStorage(settings.FILES_DIR)
+    app.state.upload_rate_limiter = create_upload_rate_limiter()
     yield
     engine.dispose()
 
@@ -29,6 +34,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(notes_router)
 app.include_router(channels_router)
 app.include_router(channels_ws_router)
+app.include_router(files_router)
 app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

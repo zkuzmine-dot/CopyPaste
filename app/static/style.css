@@ -512,3 +512,141 @@ body {
   font: 600 16px ui-monospace, "Cascadia Code", Consolas, monospace;
   letter-spacing: 0.08em;
 }
+
+.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+
+.files-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.upload-list,
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-list:empty {
+  display: none;
+}
+
+.upload-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.upload-item .file-name {
+  flex: 1 1 auto;
+}
+
+.upload-item .progress,
+.file-card .progress {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+}
+
+.file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.file-size,
+.file-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+a.button {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.button.small {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.icon-button {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.progress {
+  height: 4px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.progress-bar {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.file-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.file-list .file-card {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.file-preview {
+  grid-column: 1 / -1;
+  justify-self: start;
+  max-width: 100%;
+  max-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.file-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.file-actions:empty {
+  display: none;
+}

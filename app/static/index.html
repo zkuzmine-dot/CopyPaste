@@ -19,14 +19,14 @@
         <button id="choose-channel" class="choice" type="button">
           <span class="choice-title">Обмен между устройствами</span>
           <span class="choice-text">
-            Откройте канал на втором устройстве по QR-коду — текст будет приходить мгновенно
-            и исчезать через минуту.
+            Откройте канал на втором устройстве по QR-коду — текст и файлы будут приходить
+            мгновенно и исчезать через несколько минут.
           </span>
         </button>
         <a class="choice" href="/note">
           <span class="choice-title">Сохранить заметку</span>
           <span class="choice-text">
-            Сохраните текст и поделитесь ссылкой. Можно задать срок хранения
+            Сохраните текст и до 10 файлов, поделитесь ссылкой. Можно задать срок хранения
             или удалить после прочтения.
           </span>
         </a>
@@ -56,6 +56,7 @@
         <p class="burn-confirm-text">
           Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
         </p>
+        <p id="burn-files" class="burn-confirm-text" hidden></p>
         <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
       </section>
 
@@ -63,7 +64,7 @@
         <textarea
           id="text"
           class="editor"
-          placeholder="Вставьте или напишите текст…"
+          placeholder="Вставьте или напишите текст… Файлы можно перетащить сюда или вставить через Ctrl+V"
           maxlength="100000"
           spellcheck="false"
         ></textarea>
@@ -72,6 +73,10 @@
           <span id="info" class="info"></span>
           <span id="counter" class="counter">0 / 100 000</span>
         </div>
+
+        <p id="note-files-hint" class="files-hint" hidden></p>
+        <ul id="note-files" class="file-list" hidden></ul>
+        <ul id="attachment-list" class="upload-list"></ul>
 
         <div class="toolbar">
           <div class="options">
@@ -93,6 +98,8 @@
           </div>
 
           <div class="buttons">
+            <button id="attach" class="button" type="button">Прикрепить файлы</button>
+            <input id="attach-input" type="file" multiple hidden>
             <button id="save" class="button primary" type="button">Сохранить</button>
             <button id="copy" class="button" type="button">Скопировать</button>
             <button id="share" class="button" type="button" disabled>Поделиться</button>
@@ -127,17 +134,24 @@
         <textarea
           id="channel-text"
           class="editor compose-editor"
-          placeholder="Текст для второго устройства… (Ctrl+Enter — отправить)"
+          placeholder="Текст для второго устройства… (Ctrl+Enter — отправить). Файлы — перетащите сюда или Ctrl+V"
           maxlength="100000"
           spellcheck="false"
         ></textarea>
         <div class="compose-actions">
           <span id="channel-counter" class="counter">0 / 100 000</span>
-          <button id="channel-send" class="button primary" type="button">Отправить</button>
+          <div class="buttons">
+            <button id="channel-attach" class="button" type="button">Файлы</button>
+            <input id="channel-attach-input" type="file" multiple hidden>
+            <button id="channel-send" class="button primary" type="button">Отправить</button>
+          </div>
         </div>
+        <ul id="channel-uploads" class="upload-list"></ul>
       </div>
 
-      <p id="feed-empty" class="feed-empty">Сообщений пока нет. Каждое живёт одну минуту.</p>
+      <p id="feed-empty" class="feed-empty">
+        Сообщений пока нет. Текст живёт минуту, файл — 5 минут или до скачивания.
+      </p>
       <ul id="feed" class="feed"></ul>
 
       <div id="channel-closed" class="burn-confirm" hidden>
@@ -172,6 +186,7 @@
     </div>
   </dialog>
 
+  <script src="/static/files.js"></script>
   <script src="/static/channel.js"></script>
   <script src="/static/app.js"></script>
 </body>

@@ -1,11 +1,16 @@
+import time
 from typing import NoReturn
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from sqlalchemy.orm import Session
 
 from app.db.connection import DbSession
 from app.db.models.note import Note
+from app.schemas.file import LinkedFileRead
 from app.schemas.note import NoteCreate, NoteRead, NoteUpdate
+from app.services import files as files_service
 from app.services import notes as notes_service
+from app.settings import settings
 from app.utils.qr import make_qr_svg
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
@@ -22,21 +27,61 @@ def get_note_or_404(db: DbSession, slug: str) -> Note:
     return note
 
 
-@router.post("", response_model=NoteRead, status_code=status.HTTP_201_CREATED)
-def create_note(payload: NoteCreate, db: DbSession) -> Note:
-    return notes_service.create_note(db, payload)
+def _links_expire_at(note: Note) -> int:
+    expires = time.time() + settings.FILE_URL_TTL_SECONDS
+    if note.expires_at is not None:
+        expires = min(expires, note.expires_at.timestamp())
+    return int(expires)
+
+
+def _note_read(note: Note, files: list[LinkedFileRead], *, hide_text: bool = False) -> NoteRead:
+    # Текст прячем в схеме, а не в ORM-объекте: note.text = None ушло бы в базу при коммите
+    return NoteRead(
+        slug=note.slug,
+        text=None if hide_text else note.text,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+        expires_at=note.expires_at,
+        burn_after_read=note.burn_after_read,
+        files=files,
+    )
+
+
+def _present(db: Session, note: Note) -> NoteRead:
+    # У одноразовой заметки ссылок нет, пока её не прочитали: их выдаёт только POST /read
+    links_expire = None if note.burn_after_read else _links_expire_at(note)
+    files = files_service.files_of_note(db, note.id)
+    return _note_read(note, [LinkedFileRead.build(f, links_expire=links_expire) for f in files])
+
+
+@router.post(
+    "",
+    response_model=NoteRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={422: {"description": "Invalid body or files are not available"}},
+    description="file_ids — id из POST /api/files. Текст можно не присылать, если есть файлы.",
+)
+def create_note(payload: NoteCreate, db: DbSession) -> NoteRead:
+    try:
+        note = notes_service.create_note(db, payload)
+    except files_service.FilesNotAvailableError:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Some files are unknown, already attached or uploaded too long ago",
+        ) from None
+    return _present(db, note)
 
 
 @router.get(
     "/{slug}",
     response_model=NoteRead,
-    description="У одноразовой заметки text = null: прочитать её можно через POST /{slug}/read.",
+    description="У одноразовой заметки text = null и файлы без ссылок: "
+    "прочитать её можно через POST /{slug}/read.",
 )
 def get_note(slug: str, db: DbSession) -> NoteRead:
     note = get_note_or_404(db, slug)
-    result = NoteRead.model_validate(note)
+    result = _present(db, note)
     if note.burn_after_read:
-        # Прячем в схеме, а не в ORM-объекте: note.text = None ушло бы в базу при коммите
         result.text = None
     return result
 
@@ -44,13 +89,27 @@ def get_note(slug: str, db: DbSession) -> NoteRead:
 @router.post(
     "/{slug}/read",
     response_model=NoteRead,
-    description="Возвращает текст. Одноразовая заметка при этом удаляется.",
+    description="Возвращает текст и ссылки на файлы. Одноразовая заметка при этом удаляется, "
+    "а каждый её файл можно скачать один раз за BURN_NOTE_FILES_WINDOW_SECONDS.",
 )
-def read_note(slug: str, db: DbSession) -> Note:
-    note = notes_service.read_note(db, slug)
-    if note is None:
+def read_note(slug: str, db: DbSession) -> NoteRead:
+    result = notes_service.read_note(db, slug)
+    if result is None:
         raise_not_found()
-    return note
+    note = result.note
+    if not note.burn_after_read:
+        links_expire = _links_expire_at(note)
+        return _note_read(
+            note, [LinkedFileRead.build(f, links_expire=links_expire) for f in result.files]
+        )
+
+    files = []
+    for stored in result.files:
+        # keep_until выставлен в release_for_burn: ссылка живёт ровно столько же, сколько файл
+        assert stored.keep_until is not None
+        expires = int(stored.keep_until.timestamp())
+        files.append(LinkedFileRead.build(stored, links_expire=expires, preview=False))
+    return _note_read(note, files)
 
 
 @router.get(
@@ -65,14 +124,14 @@ def note_qr(slug: str, request: Request, db: DbSession) -> Response:
 
 
 @router.put("/{slug}", response_model=NoteRead)
-def update_note(slug: str, payload: NoteUpdate, db: DbSession) -> Note:
+def update_note(slug: str, payload: NoteUpdate, db: DbSession) -> NoteRead:
     note = get_note_or_404(db, slug)
     if note.burn_after_read:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Burn-after-read notes cannot be edited",
         )
-    return notes_service.update_note(db, note, payload)
+    return _present(db, notes_service.update_note(db, note, payload))
 
 
 @router.delete("/{slug}", status_code=status.HTTP_204_NO_CONTENT)

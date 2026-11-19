@@ -25,6 +25,8 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - .:/app
+      # Не внутри папки проекта: она смонтирована сюда, лежит в OneDrive и в git
+      - filedata:/data/files
     depends_on:
       db:
         condition: service_healthy
@@ -38,6 +40,7 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - .:/app
+      - filedata:/data/files
     depends_on:
       db:
         condition: service_healthy
@@ -46,3 +49,4 @@ services:
 
 volumes:
   pgdata:
+  filedata:

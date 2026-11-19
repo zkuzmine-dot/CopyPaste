@@ -5,7 +5,9 @@ from typing import Any, cast
 from sqlalchemy import ColumnElement, CursorResult, and_, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.db.models.channel import Channel, Message, Participant, ParticipantRole
+from app.db.models.channel import Channel, Message, MessageKind, Participant, ParticipantRole
+from app.db.models.file import StoredFile
+from app.services import files as files_service
 from app.settings import settings
 from app.utils.tokens import generate_token, hash_token
 
@@ -97,11 +99,15 @@ def get_live_messages(db: Session, channel: Channel) -> Sequence[Message]:
     return db.execute(stmt).scalars().all()
 
 
-def add_message(db: Session, participant: Participant, text: str) -> Message:
+def _lock_as_sender(db: Session, participant: Participant) -> None:
     _lock_active_channel(db, participant.channel_id)
     db.refresh(participant)
     if participant.role != ParticipantRole.SENDER:
         raise ActionNotAllowedError
+
+
+def add_message(db: Session, participant: Participant, text: str) -> Message:
+    _lock_as_sender(db, participant)
     message = Message(
         channel_id=participant.channel_id,
         sender_id=participant.id,
@@ -112,6 +118,29 @@ def add_message(db: Session, participant: Participant, text: str) -> Message:
     _touch(db, participant.channel_id)
     db.flush()
     return message
+
+
+def add_file_message(
+    db: Session, participant: Participant, public_id: str
+) -> tuple[Message, StoredFile]:
+    """FilesNotAvailableError, если файл не свой или уже отправлен: транзакцию нужно откатить."""
+    _lock_as_sender(db, participant)
+    message = Message(
+        channel_id=participant.channel_id,
+        sender_id=participant.id,
+        kind=MessageKind.FILE,
+        text=None,
+        # Дольше текста: большой файл по медленной сети успевает скачаться
+        expires_at=func.now() + timedelta(seconds=settings.CHANNEL_FILE_TTL_SECONDS),
+    )
+    db.add(message)
+    db.flush()
+    stored = files_service.attach_to_message(
+        db, message.id, public_id, uploaded_by_id=participant.id
+    )
+    _touch(db, participant.channel_id)
+    db.flush()
+    return message, stored
 
 
 def become_sender(db: Session, participant: Participant) -> None:

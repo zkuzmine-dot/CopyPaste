@@ -1,5 +1,6 @@
-// Канал: обмен текстом между двумя устройствами через WebSocket.
-// Использует showStatus и copyToClipboard из app.js — они нужны только во время работы.
+// Канал: обмен текстом и файлами между двумя устройствами через WebSocket.
+// Использует showStatus и copyToClipboard из app.js и функции файлов из files.js —
+// они нужны только во время работы.
 
 const CHANNEL_API = "/api/channels";
 const CHANNEL_MAX_LENGTH = 100000;
@@ -26,6 +27,9 @@ const channelComposeEl = document.getElementById("channel-compose");
 const channelTextEl = document.getElementById("channel-text");
 const channelCounterEl = document.getElementById("channel-counter");
 const channelSendBtn = document.getElementById("channel-send");
+const channelAttachBtn = document.getElementById("channel-attach");
+const channelAttachInput = document.getElementById("channel-attach-input");
+const channelUploadsEl = document.getElementById("channel-uploads");
 const feedEl = document.getElementById("feed");
 const feedEmptyEl = document.getElementById("feed-empty");
 const channelClosedEl = document.getElementById("channel-closed");
@@ -43,6 +47,8 @@ const channel = {
   connection: "",
   // id → { data, el }: одно сообщение может прийти и в state, и отдельным событием
   messages: new Map(),
+  // Файл сначала загружается по HTTP, потом его id уходит в канал событием send_file
+  uploads: [],
   retries: 0,
   retryTimer: null,
   tickTimer: null,
@@ -170,6 +176,12 @@ function leaveChannel() {
   });
   channel.messages.clear();
   feedEl.replaceChildren();
+  for (const upload of channel.uploads) {
+    upload.state = "removed";
+    upload.request?.abort();
+  }
+  channel.uploads = [];
+  channelUploadsEl.replaceChildren();
   channelClosedEl.hidden = true;
 }
 
@@ -209,10 +221,19 @@ function handleEvent(event) {
       channel.peerOnline = event.peer_online;
       event.messages.forEach(addMessage);
       setConnection("");
+      flushUploads();
       break;
     case "message":
       addMessage(event);
+      if (event.file) {
+        forgetUpload(event.file.id);
+      }
       break;
+    case "file_downloaded": {
+      const entry = channel.messages.get(event.message_id);
+      entry?.card?.markReceived(isOwnFile(entry.data) ? "Получатель скачал файл" : "Скачано");
+      break;
+    }
     case "roles_changed":
       channel.role = event.role;
       showStatus(event.role === "sender" ? "Теперь вы отправитель" : "Теперь вы получатель");
@@ -223,6 +244,9 @@ function handleEvent(event) {
       break;
     case "error":
       showStatus(errorText(event), "error");
+      if (event.code === "not_sender" || event.code === "file_not_found") {
+        failOldestSentUpload(errorText(event));
+      }
       break;
     case "channel_closed":
       // Следом сервер закроет соединение с кодом 4410 — там и покажем экран
@@ -239,6 +263,8 @@ function errorText(event) {
       return "Вы уже отправитель";
     case "rate_limited":
       return "Слишком часто — подождите секунду";
+    case "file_not_found":
+      return "Файл не отправлен: его уже отправили или загрузка устарела";
     case "invalid_event":
       return `Сервер не принял сообщение: ${event.detail}`;
     default:
@@ -336,6 +362,11 @@ function render() {
   feedEmptyEl.hidden = !active || channel.messages.size > 0;
 }
 
+// Ссылок нет только у своего файла: скачивает его собеседник
+function isOwnFile(message) {
+  return message.kind === "file" && !message.file?.download_url;
+}
+
 function addMessage(message) {
   if (channel.messages.has(message.id)) {
     return;
@@ -343,28 +374,36 @@ function addMessage(message) {
   const item = document.createElement("li");
   item.className = "feed-item";
 
-  const text = document.createElement("pre");
-  text.className = "feed-text";
-  text.textContent = message.text;
-
   const meta = document.createElement("div");
   meta.className = "feed-meta";
   const left = document.createElement("span");
   left.className = "feed-left";
-  const copy = document.createElement("button");
-  copy.className = "button";
-  copy.type = "button";
-  copy.textContent = "Скопировать";
-  copy.addEventListener("click", () => copyMessage(message.text));
-  meta.append(left, copy);
+  meta.append(left);
 
-  item.append(text, meta);
+  let card = null;
+  if (message.kind === "file" && message.file) {
+    card = createFileCard(message.file, {
+      status: isOwnFile(message) ? "Ждёт скачивания получателем" : "",
+    });
+    item.append(card.el, meta);
+  } else {
+    const text = document.createElement("pre");
+    text.className = "feed-text";
+    text.textContent = message.text;
+    const copy = document.createElement("button");
+    copy.className = "button";
+    copy.type = "button";
+    copy.textContent = "Скопировать";
+    copy.addEventListener("click", () => copyMessage(message.text));
+    meta.append(copy);
+    item.append(text, meta);
+  }
   // Новые сверху: обычно нужно именно последнее присланное
   const older = [...channel.messages.values()]
     .filter((m) => m.data.id < message.id)
     .sort((a, b) => b.data.id - a.data.id)[0];
   feedEl.insertBefore(item, older ? older.el : null);
-  channel.messages.set(message.id, { data: message, el: item, left });
+  channel.messages.set(message.id, { data: message, el: item, left, card });
   updateLeft(channel.messages.get(message.id));
 }
 
@@ -375,7 +414,9 @@ function updateLeft(entry) {
     channel.messages.delete(entry.data.id);
     return;
   }
-  entry.left.textContent = `исчезнет через ${seconds} с`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = minutes ? `${minutes} мин ${seconds % 60} с` : `${seconds} с`;
+  entry.left.textContent = `исчезнет через ${rest}`;
 }
 
 function tick() {
@@ -406,6 +447,61 @@ function sendMessage() {
   channelTextEl.value = "";
   updateChannelCounter();
   channelTextEl.focus();
+}
+
+function wsOpen() {
+  return channel.ws !== null && channel.ws.readyState === WebSocket.OPEN;
+}
+
+function sendFiles(files) {
+  for (const file of files) {
+    const upload = startUpload(file, {
+      url: () => `${CHANNEL_API}/${encodeURIComponent(channel.slug)}/files`,
+      headers: () => ({ "X-Participant-Token": channel.token }),
+      list: channelUploadsEl,
+      onDone: flushUploads,
+      onRemoved: (removed) => {
+        channel.uploads = channel.uploads.filter((item) => item !== removed);
+      },
+    });
+    channel.uploads.push(upload);
+  }
+}
+
+// Загруженные файлы отправляем в канал; без связи — дождутся переподключения (state)
+function flushUploads() {
+  for (const upload of channel.uploads) {
+    if (upload.state !== "done" || upload.sent) {
+      continue;
+    }
+    if (!wsOpen()) {
+      upload.status.textContent = "Ждёт связи…";
+      continue;
+    }
+    channel.ws.send(JSON.stringify({ type: "send_file", file_id: upload.id }));
+    upload.sent = true;
+    upload.status.textContent = "Отправляется…";
+  }
+}
+
+// Файл дошёл до канала и уже виден в ленте — из списка загрузок он больше не нужен
+function forgetUpload(fileId) {
+  const upload = channel.uploads.find((item) => item.id === fileId);
+  if (upload) {
+    upload.el.remove();
+    channel.uploads = channel.uploads.filter((item) => item !== upload);
+  }
+}
+
+// Сервер отвечает на send_file по порядку, а дошедшие файлы уже убраны из списка
+// (forgetUpload) — значит, ошибка относится к самому раннему ещё не подтверждённому
+function failOldestSentUpload(reason) {
+  const upload = channel.uploads.find((item) => item.sent);
+  if (upload) {
+    upload.state = "error";
+    upload.sent = false;
+    upload.status.textContent = reason;
+  }
 }
 
 function becomeSender() {
@@ -461,6 +557,8 @@ chooseChannelBtn.addEventListener("click", startChannel);
 joinFormEl.addEventListener("submit", joinByCode);
 becomeSenderBtn.addEventListener("click", becomeSender);
 channelSendBtn.addEventListener("click", sendMessage);
+bindFilePicker(channelAttachBtn, channelAttachInput, sendFiles);
+acceptDroppedAndPasted(channelComposeEl, channelTextEl, sendFiles);
 channelUrlCopyBtn.addEventListener("click", copyChannelUrl);
 channelTextEl.addEventListener("input", updateChannelCounter);
 closedActionBtn.addEventListener("click", () => channel.closedAction?.());

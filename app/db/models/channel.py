@@ -13,6 +13,11 @@ class ParticipantRole(StrEnum):
     RECEIVER = "receiver"
 
 
+class MessageKind(StrEnum):
+    TEXT = "text"
+    FILE = "file"
+
+
 class Channel(Base):
     __tablename__ = "channels"
 
@@ -46,11 +51,21 @@ class Participant(Base):
 
 class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = (Index("ix_messages_channel_id_created_at", "channel_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_messages_channel_id_created_at", "channel_id", "created_at"),
+        CheckConstraint("kind IN ('text', 'file')", name="ck_messages_kind"),
+        # Текст есть ровно у текстовых сообщений; файл лежит в stored_files.message_id
+        CheckConstraint(
+            "(kind = 'text') = (text IS NOT NULL)", name="ck_messages_text_matches_kind"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id", ondelete="CASCADE"))
     sender_id: Mapped[int] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"))
-    text: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(
+        String(8), default=MessageKind.TEXT, server_default=MessageKind.TEXT.value
+    )
+    text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

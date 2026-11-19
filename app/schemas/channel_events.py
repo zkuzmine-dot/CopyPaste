@@ -19,11 +19,19 @@ class SendEvent(BaseModel):
     text: NoteText
 
 
+class SendFileEvent(BaseModel):
+    type: Literal["send_file"]
+    # id из POST /api/channels/{slug}/files: сам файл идёт по HTTP, сюда — только ссылка на него
+    file_id: str = Field(min_length=1, max_length=64)
+
+
 class BecomeSenderEvent(BaseModel):
     type: Literal["become_sender"]
 
 
-ClientEvent = Annotated[AuthEvent | SendEvent | BecomeSenderEvent, Field(discriminator="type")]
+ClientEvent = Annotated[
+    AuthEvent | SendEvent | SendFileEvent | BecomeSenderEvent, Field(discriminator="type")
+]
 client_event_adapter: TypeAdapter[ClientEvent] = TypeAdapter(ClientEvent)
 
 
@@ -50,6 +58,11 @@ class RolesChangedEvent(BaseModel):
 class PeerStatusEvent(BaseModel):
     type: Literal["peer_status"] = "peer_status"
     online: bool
+
+
+class FileDownloadedEvent(BaseModel):
+    type: Literal["file_downloaded"] = "file_downloaded"
+    message_id: int
 
 
 class ErrorEvent(BaseModel):
