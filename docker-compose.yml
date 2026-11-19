@@ -12,6 +12,16 @@ services:
       timeout: 3s
       retries: 10
 
+  # Счётчики неверных паролей и заморозки. Данные временные, поэтому на диск не пишем
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
   app:
     build:
       context: .
@@ -29,6 +39,8 @@ services:
       - filedata:/data/files
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # Периодические задачи (чистка протухших заметок).

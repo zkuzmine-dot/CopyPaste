@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from redis import Redis
 
 from app.api.channels.routes import router as channels_router
 from app.api.channels.ws import router as channels_ws_router
@@ -26,7 +27,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.channel_manager = ChannelManager()
     app.state.file_storage = LocalFileStorage(settings.FILES_DIR)
     app.state.upload_rate_limiter = create_upload_rate_limiter()
+    # Соединение откроется при первой команде: без Redis приложение стартует,
+    # а отказывают только операции, которым он нужен
+    app.state.redis = Redis.from_url(settings.REDIS_URL)
     yield
+    app.state.redis.close()
     engine.dispose()
 
 
