@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import delete, func, select, update
 
-from app.db.models.channel import Channel
+from app.db.models.channel import Channel, Message
 from app.db.models.file import FileOrigin, StoredFile
 from app.schemas.note import NoteCreate
 from app.services import channels as channels_service
@@ -100,12 +100,50 @@ def test_unknown_file_is_unavailable(db):
     assert files_service.get_available_file(db, "nope") is None
 
 
-def test_delete_file_returns_key_once(db):
+def test_delete_received_one_time_file_once(db):
     stored = make_file(db)
-    key = stored.storage_key
+    stored.delete_after_download = True
+    db.flush()
+    key, public_id = stored.storage_key, stored.public_id
 
-    assert files_service.delete_file(db, stored.id) == key
-    assert files_service.delete_file(db, stored.id) is None
+    assert files_service.delete_received(db, public_id) == files_service.DeletedFile(
+        storage_key=key, message_id=None, channel_slug=None
+    )
+    assert files_service.delete_received(db, public_id) is None
+
+
+def test_delete_received_keeps_regular_file(db, note):
+    stored = make_file(db)
+    give_owner(db, stored, note=note)
+
+    assert files_service.delete_received(db, stored.public_id) is None
+    assert db.scalar(select(StoredFile.id).where(StoredFile.id == stored.id)) == stored.id
+
+
+def test_delete_received_channel_file_removes_message(db, message):
+    stored = make_file(db, origin=FileOrigin.CHANNEL)
+    give_owner(db, stored, message=message)
+    stored.delete_after_download = True
+    db.flush()
+    message_id = message.id
+    slug = db.scalar(select(Channel.slug).where(Channel.id == message.channel_id))
+
+    deleted = files_service.delete_received(db, stored.public_id)
+
+    assert deleted == files_service.DeletedFile(stored.storage_key, message_id, slug)
+    assert db.scalar(select(Message).where(Message.id == message_id)) is None
+
+
+def test_file_of_expired_message_is_unavailable(db, message):
+    stored = make_file(db, origin=FileOrigin.CHANNEL)
+    give_owner(db, stored, message=message)
+    db.execute(
+        update(Message)
+        .where(Message.id == message.id)
+        .values(expires_at=func.now() - timedelta(seconds=1))
+    )
+
+    assert files_service.get_available_file(db, stored.public_id) is None
 
 
 # --- сборщик ---

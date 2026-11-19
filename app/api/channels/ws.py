@@ -5,6 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.channels.presenters import live_messages_read, message_read
 from app.db.connection import run_db
 from app.db.models.channel import Participant, ParticipantRole
 from app.realtime.manager import ChannelManager, CloseCode, Connection
@@ -20,10 +21,12 @@ from app.schemas.channel_events import (
     PeerStatusEvent,
     RolesChangedEvent,
     SendEvent,
+    SendFileEvent,
     StateEvent,
     client_event_adapter,
 )
 from app.services import channels as channels_service
+from app.services import files as files_service
 from app.settings import settings
 
 router = APIRouter()
@@ -114,15 +117,30 @@ def _load_state(db: Session, participant_id: int) -> LoadedState:
         role=ParticipantRole(participant.role),
         peer_joined=channels_service.count_participants(db, channel)
         == channels_service.MAX_PARTICIPANTS,
-        messages=[
-            MessageRead.model_validate(m) for m in channels_service.get_live_messages(db, channel)
-        ],
+        messages=live_messages_read(db, channel, viewer_id=participant_id),
     )
 
 
 def _add_message(db: Session, participant_id: int, text: str) -> MessageEvent:
     message = channels_service.add_message(db, _get_participant(db, participant_id), text)
     return MessageEvent.model_validate(message)
+
+
+@dataclass(frozen=True)
+class FileMessageEvents:
+    for_uploader: MessageEvent
+    for_others: MessageEvent
+
+
+def _add_file_message(db: Session, participant_id: int, file_id: str) -> FileMessageEvents:
+    message, stored = channels_service.add_file_message(
+        db, _get_participant(db, participant_id), file_id
+    )
+    # Собираем здесь, внутри сессии: после коммита объекты ORM протухнут
+    return FileMessageEvents(
+        for_uploader=MessageEvent(**message_read(message, stored, with_links=False).model_dump()),
+        for_others=MessageEvent(**message_read(message, stored, with_links=True).model_dump()),
+    )
 
 
 def _become_sender(db: Session, participant_id: int) -> None:
@@ -219,6 +237,24 @@ async def _handle_event(
                 await connection.send(error)
                 return
             await manager.broadcast(slug, message)
+        case SendFileEvent(file_id=file_id):
+            try:
+                events = await run_db(factory, lambda db: _add_file_message(db, me, file_id))
+            except channels_service.ActionNotAllowedError:
+                error = ErrorEvent(code="not_sender", detail="Only the sender can send files")
+                await connection.send(error)
+                return
+            except files_service.FilesNotAvailableError:
+                error = ErrorEvent(
+                    code="file_not_found",
+                    detail="File is not found, not yours or already sent",
+                )
+                await connection.send(error)
+                return
+            for pid in manager.participant_ids(slug):
+                await manager.send_to(
+                    slug, pid, events.for_uploader if pid == me else events.for_others
+                )
         case BecomeSenderEvent():
             try:
                 await run_db(factory, lambda db: _become_sender(db, me))

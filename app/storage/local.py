@@ -8,7 +8,6 @@ import anyio
 from starlette.responses import FileResponse, Response
 
 from app.storage.base import FileTooLargeError, InvalidStorageKeyError, is_valid_key
-from app.storage.responses import CompletionTrackingFileResponse, OnComplete
 
 
 class LocalFileStorage:
@@ -59,16 +58,11 @@ class LocalFileStorage:
         *,
         media_type: str,
         headers: Mapping[str, str],
-        on_complete: OnComplete | None = None,
     ) -> Response:
         path = self.path(key)
         if not path.is_file():
             raise FileNotFoundError(key)
-        if on_complete is None:
-            return FileResponse(path, media_type=media_type, headers=headers)
-        return CompletionTrackingFileResponse(
-            path, media_type=media_type, headers=headers, on_complete=on_complete
-        )
+        return FileResponse(path, media_type=media_type, headers=headers)
 
     def delete(self, key: str) -> None:
         self.path(key).unlink(missing_ok=True)

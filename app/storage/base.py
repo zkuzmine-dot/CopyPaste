@@ -6,8 +6,6 @@ from typing import Protocol
 
 from starlette.responses import Response
 
-from app.storage.responses import OnComplete
-
 # ab/cd/abcd...: папки — первые символы самого имени. Только [0-9a-f] и "/",
 # поэтому из ключа нельзя собрать путь за пределы хранилища
 _KEY_PATTERN = re.compile(r"([0-9a-f]{2})/([0-9a-f]{2})/\1\2[0-9a-f]{28}")
@@ -41,9 +39,8 @@ class FileStorage(Protocol):
         *,
         media_type: str,
         headers: Mapping[str, str],
-        on_complete: OnComplete | None = None,
     ) -> Response:
-        """Ответ с файлом. FileNotFoundError, если байтов нет. on_complete — после полной отдачи."""
+        """Ответ с файлом, с поддержкой докачки. FileNotFoundError, если байтов нет."""
         ...
 
     def delete(self, key: str) -> None: ...

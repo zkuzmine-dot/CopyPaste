@@ -76,6 +76,12 @@ def test_create_note_with_files(client, db):
     ]
 
 
+def test_regular_note_files_have_no_received_url(client):
+    note = created(client, text="x", file_ids=[upload(client)])
+
+    assert note["files"][0]["received_url"] is None
+
+
 def test_note_with_only_files(client):
     note = created(client, file_ids=[upload(client)])
 
@@ -252,8 +258,9 @@ def test_burn_read_gives_one_time_links(client, db, file_storage):
 
     assert read["text"] == "secret"
     photo, text_file = read["files"]
-    # У одноразовой заметки картинка — просто файл: превью сожгло бы её раньше скачивания
+    # Так договорились: у одноразовой заметки картинка — просто файл, без превью
     assert photo["preview_url"] is None
+    assert text_file["received_url"] is not None
     row = stored(db, txt)
     assert row.note_id is None
     assert row.delete_after_download is True
@@ -262,11 +269,15 @@ def test_burn_read_gives_one_time_links(client, db, file_storage):
         seconds=settings.BURN_NOTE_FILES_WINDOW_SECONDS
     )
 
+    # Скачивание само ничего не удаляет: оборванное можно повторить
     assert client.get(text_file["download_url"]).content == b"hello"
+    assert stored(db, txt) is not None
+
+    assert client.post(text_file["received_url"]).status_code == 204
     assert client.get(text_file["download_url"]).status_code == 410
     assert stored(db, txt) is None
     assert not txt_path.exists()
-    # Второй файл не скачивали — он на месте
+    # Получение второго файла не подтверждали — он на месте
     assert stored(db, png) is not None
 
 

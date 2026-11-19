@@ -29,8 +29,8 @@ def link(file_id: str, *, inline: bool = False, ttl: int = 60) -> str:
     return signing.file_url(file_id, int(time.time()) + ttl, inline=inline)
 
 
-def link_query(file_id: str) -> dict[str, str]:
-    query = urlsplit(link(file_id)).query
+def link_query(file_id: str, *, inline: bool = False) -> dict[str, str]:
+    query = urlsplit(link(file_id, inline=inline)).query
     return {key: values[0] for key, values in parse_qs(query).items()}
 
 
@@ -229,36 +229,71 @@ def test_expired_pending_upload_is_410(client, db):
     assert client.get(link(file_id)).status_code == 410
 
 
-def test_delete_after_download(client, db, file_storage):
+# --- одноразовые файлы: удаляются только по подтверждению получения ---
+
+
+def received(file_id: str, *, ttl: int = 60) -> str:
+    return signing.received_url(file_id, int(time.time()) + ttl)
+
+
+def test_download_does_not_delete_one_time_file(client, db):
+    # Сервер не знает, дошли ли байты до клиента, поэтому сам ничего не удаляет
     file_id = uploaded_id(client, b"secret")
-    storage_key = row(db, file_id).storage_key
     mark_delete_after_download(db, file_id)
 
-    first = client.get(link(file_id))
+    assert client.get(link(file_id)).content == b"secret"
+    assert client.get(link(file_id)).content == b"secret"
+    assert row(db, file_id) is not None
 
-    assert first.status_code == 200
-    assert first.content == b"secret"
+
+def test_range_works_for_one_time_file(client, db):
+    # Докачка после обрыва — для медленного интернета
+    file_id = uploaded_id(client, b"secret")
+    mark_delete_after_download(db, file_id)
+
+    response = client.get(link(file_id), headers={"Range": "bytes=2-"})
+
+    assert response.status_code == 206
+    assert response.content == b"cret"
+
+
+def test_received_deletes_one_time_file(client, db, file_storage):
+    file_id = uploaded_id(client, b"secret")
+    path = file_storage.path(row(db, file_id).storage_key)
+    mark_delete_after_download(db, file_id)
+
+    assert client.post(received(file_id)).status_code == 204
+
     assert row(db, file_id) is None
-    assert not file_storage.path(storage_key).exists()
+    assert not path.exists()
     assert client.get(link(file_id)).status_code == 410
+    # Повтор ничего не ломает: клиент может переспросить, если не дождался ответа
+    assert client.post(received(file_id)).status_code == 204
 
 
-def test_range_is_ignored_for_delete_after_download(client, db):
-    # Иначе кусок файла не считался бы скачиванием, а докачку здесь не поддерживаем:
-    # отдаём файл целиком, и это уже полное скачивание
-    file_id = uploaded_id(client, b"secret")
-    mark_delete_after_download(db, file_id)
+def test_received_does_not_delete_regular_file(client, db):
+    file_id = uploaded_id(client, b"data")
 
-    response = client.get(link(file_id), headers={"Range": "bytes=0-1"})
-
-    assert response.status_code == 200
-    assert response.content == b"secret"
-    assert row(db, file_id) is None
+    assert client.post(received(file_id)).status_code == 204
+    assert row(db, file_id) is not None
 
 
-def test_preview_does_not_delete(client, db):
+@pytest.mark.parametrize(
+    "make_query",
+    [
+        lambda file_id: {**link_query(file_id), "sig": "A" * 43},
+        lambda file_id: {**link_query(file_id), "exp": str(int(time.time()) - 1)},
+        # Ссылка на превью не годится для подтверждения: подпись выдана под inline=1
+        lambda file_id: {
+            k: v for k, v in link_query(file_id, inline=True).items() if k != "inline"
+        },
+    ],
+    ids=["forged", "expired", "preview_link"],
+)
+def test_received_with_bad_link_is_403(client, db, make_query):
     file_id = uploaded_id(client, PNG, "photo.png")
     mark_delete_after_download(db, file_id)
+    response = client.post(f"{URL}/{file_id}/received", params=make_query(file_id))
 
-    assert client.get(link(file_id, inline=True)).status_code == 200
+    assert response.status_code == 403
     assert row(db, file_id) is not None

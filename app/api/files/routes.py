@@ -10,12 +10,13 @@ from starlette.requests import ClientDisconnect
 
 from app.db.connection import run_db
 from app.db.models.file import FileOrigin
+from app.realtime.manager import ChannelManager
 from app.realtime.rate_limit import KeyedRateLimiter
+from app.schemas.channel_events import FileDownloadedEvent
 from app.schemas.file import FileRead
 from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import FileStorage, FileTooLargeError, new_storage_key
-from app.storage.responses import OnComplete
 from app.utils import signing
 from app.utils.file_types import (
     SNIFF_BYTES,
@@ -34,6 +35,15 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": "sandbox; default-src 'none'",
     "Cross-Origin-Resource-Policy": "same-origin",
     "Cache-Control": "private, no-store",
+}
+
+
+# Тело запроса — сами байты файла, без multipart: FastAPI сам такое не описывает
+RAW_FILE_BODY = {
+    "requestBody": {
+        "required": True,
+        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+    }
 }
 
 
@@ -129,14 +139,7 @@ async def receive_upload(
         429: {"description": "Too many uploads"},
         507: {"description": "Storage is full"},
     },
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
-            },
-        }
-    },
+    openapi_extra=RAW_FILE_BODY,
     description="Тело запроса — сами байты файла. Файл ждёт привязки к заметке час.",
 )
 async def upload_file(
@@ -147,24 +150,22 @@ async def upload_file(
 
 @dataclass(frozen=True)
 class _Download:
-    id: int
     storage_key: str
     name: str
     content_type: str
-    delete_after_download: bool
 
 
 def _find_download(db: Session, public_id: str) -> _Download | None:
     stored = files_service.get_available_file(db, public_id)
     if stored is None:
         return None
-    return _Download(
-        id=stored.id,
-        storage_key=stored.storage_key,
-        name=stored.name,
-        content_type=stored.content_type,
-        delete_after_download=stored.delete_after_download,
-    )
+    return _Download(stored.storage_key, stored.name, stored.content_type)
+
+
+def _check_link(public_id: str, exp: int, inline: bool, sig: str) -> None:
+    # Подпись проверяется без БД: по чужой или старой ссылке до базы дело не доходит
+    if not signing.is_valid_signature(public_id, exp, inline, sig):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid or expired link")
 
 
 @router.get(
@@ -172,50 +173,57 @@ def _find_download(db: Session, public_id: str) -> _Download | None:
     response_class=Response,
     responses={
         200: {"content": {"application/octet-stream": {}}, "description": "Файл"},
+        206: {"description": "Часть файла (Range): докачка после обрыва"},
         400: {"description": "Preview is only available for images"},
         403: {"description": "Invalid or expired link"},
         410: {"description": "File is no longer available"},
     },
+    description="Скачивание ничего не удаляет: одноразовый файл удаляется по POST /received.",
 )
 async def download_file(
     request: Request, public_id: str, exp: int, sig: str, inline: bool = False
 ) -> Response:
-    # Подпись проверяется без БД: по чужой или старой ссылке до базы дело не доходит
-    if not signing.is_valid_signature(public_id, exp, inline, sig):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid or expired link")
-
+    _check_link(public_id, exp, inline, sig)
     factory: sessionmaker[Session] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     found = await run_db(factory, lambda db: _find_download(db, public_id))
-    # Подпись верная — файл точно был, значит, его уже скачали или срок вышел
+    # Подпись верная — файл точно был, значит, его уже получили или срок вышел
     if found is None:
         raise _gone()
     if inline and not is_previewable(found.content_type):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Preview is only available for images"
         )
-
-    on_complete: OnComplete | None = None
-    if found.delete_after_download and not inline:
-        file_id = found.id
-
-        async def forget() -> None:
-            key = await run_db(factory, lambda db: files_service.delete_file(db, file_id))
-            if key is not None:
-                await run_in_threadpool(storage.delete, key)
-
-        on_complete = forget
-
     headers = {
         **SECURITY_HEADERS,
         "Content-Disposition": content_disposition(found.name, inline=inline),
     }
     try:
-        return storage.download(
-            found.storage_key,
-            media_type=found.content_type,
-            headers=headers,
-            on_complete=on_complete,
-        )
+        return storage.download(found.storage_key, media_type=found.content_type, headers=headers)
     except FileNotFoundError:
         raise _gone() from None
+
+
+@router.post(
+    "/{public_id}/received",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={403: {"description": "Invalid or expired link"}},
+    description="Клиент скачал одноразовый файл целиком: файл удаляется, а в канале обоим "
+    "участникам уходит file_downloaded. Параметры — из ссылки на скачивание. "
+    "Повторный вызов и вызов для обычного файла ничего не делают.",
+)
+async def confirm_received(request: Request, public_id: str, exp: int, sig: str) -> None:
+    # Только клиент знает, что получил файл: сервер видит лишь, что передал байты ядру,
+    # а файл в несколько мегабайт целиком уходит в буферы сокетов ещё до обрыва связи
+    _check_link(public_id, exp, False, sig)
+    factory: sessionmaker[Session] = request.app.state.session_factory
+    storage: FileStorage = request.app.state.file_storage
+    deleted = await run_db(factory, lambda db: files_service.delete_received(db, public_id))
+    if deleted is None:
+        return
+    await run_in_threadpool(storage.delete, deleted.storage_key)
+    if deleted.channel_slug is not None and deleted.message_id is not None:
+        manager: ChannelManager = request.app.state.channel_manager
+        await manager.broadcast(
+            deleted.channel_slug, FileDownloadedEvent(message_id=deleted.message_id)
+        )

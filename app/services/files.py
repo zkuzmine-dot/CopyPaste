@@ -1,10 +1,12 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import cast
 
 from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.db.models.channel import Channel, Message
 from app.db.models.file import FileOrigin, StoredFile
 from app.db.models.note import Note
 from app.settings import settings
@@ -16,8 +18,15 @@ class FilesNotAvailableError(Exception):
     """Часть файлов не найдена, уже привязана или просрочена. Транзакцию нужно откатить."""
 
 
+@dataclass(frozen=True)
+class DeletedFile:
+    storage_key: str
+    message_id: int | None
+    channel_slug: str | None
+
+
 def _owner_is_alive() -> ColumnElement[bool]:
-    # Истёкшая заметка живёт в БД до прохода чистки — её файлы отдавать уже нельзя
+    # Истёкшие заметка и сообщение живут в БД до прохода чистки — их файлы отдавать уже нельзя
     note_alive = (
         select(Note.id)
         .where(
@@ -26,7 +35,12 @@ def _owner_is_alive() -> ColumnElement[bool]:
         )
         .exists()
     )
-    return or_(note_alive, StoredFile.message_id.is_not(None))
+    message_alive = (
+        select(Message.id)
+        .where(Message.id == StoredFile.message_id, Message.expires_at > func.now())
+        .exists()
+    )
+    return or_(note_alive, message_alive)
 
 
 def _is_garbage() -> ColumnElement[bool]:
@@ -119,9 +133,60 @@ def release_for_burn(db: Session, note_id: int) -> list[StoredFile]:
     return sorted(db.scalars(stmt).all(), key=lambda stored: stored.position or 0)
 
 
-def delete_file(db: Session, file_id: int) -> str | None:
-    stmt = delete(StoredFile).where(StoredFile.id == file_id).returning(StoredFile.storage_key)
-    return db.execute(stmt).scalar_one_or_none()
+def delete_received(db: Session, public_id: str) -> DeletedFile | None:
+    """Клиент получил одноразовый файл: удаляем строку, а у файла канала — и его сообщение.
+
+    None, если файл не одноразовый или его уже удалили: тогда и сообщать никому не нужно.
+    """
+    stmt = (
+        delete(StoredFile)
+        .where(StoredFile.public_id == public_id, StoredFile.delete_after_download.is_(True))
+        .returning(StoredFile.storage_key, StoredFile.message_id)
+    )
+    row = db.execute(stmt).one_or_none()
+    if row is None:
+        return None
+    channel_slug = None
+    if row.message_id is not None:
+        channel_slug = db.scalar(
+            select(Channel.slug)
+            .join(Message, Message.channel_id == Channel.id)
+            .where(Message.id == row.message_id)
+        )
+        db.execute(delete(Message).where(Message.id == row.message_id))
+    return DeletedFile(row.storage_key, row.message_id, channel_slug)
+
+
+def attach_to_message(
+    db: Session, message_id: int, public_id: str, *, uploaded_by_id: int
+) -> StoredFile:
+    """FilesNotAvailableError — транзакцию нужно откатить."""
+    # Как и с заметками, все условия — в самом UPDATE. Плюс файл должен быть своим:
+    # загружен этим участником и именно для канала
+    stmt = (
+        update(StoredFile)
+        .where(
+            StoredFile.public_id == public_id,
+            StoredFile.origin == FileOrigin.CHANNEL,
+            StoredFile.uploaded_by_id == uploaded_by_id,
+            StoredFile.note_id.is_(None),
+            StoredFile.message_id.is_(None),
+            StoredFile.keep_until > func.now(),
+        )
+        .values(message_id=message_id, keep_until=None, delete_after_download=True)
+        .returning(StoredFile)
+    )
+    stored = db.scalars(stmt).one_or_none()
+    if stored is None:
+        raise FilesNotAvailableError
+    return stored
+
+
+def files_of_messages(db: Session, message_ids: Sequence[int]) -> dict[int, StoredFile]:
+    if not message_ids:
+        return {}
+    stmt = select(StoredFile).where(StoredFile.message_id.in_(message_ids))
+    return {stored.message_id: stored for stored in db.scalars(stmt) if stored.message_id}
 
 
 def collect_garbage(db: Session, limit: int = GC_BATCH_SIZE) -> list[str]:

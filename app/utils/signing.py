@@ -23,6 +23,12 @@ def file_url(public_id: str, expires: int, *, inline: bool = False) -> str:
     return f"/api/files/{public_id}?{urlencode(query)}"
 
 
+def received_url(public_id: str, expires: int) -> str:
+    # Та же подпись, что у ссылки на скачивание: подтвердить получение может тот, кто качал
+    query = {"exp": expires, "sig": _signature(public_id, expires, False)}
+    return f"/api/files/{public_id}/received?{urlencode(query)}"
+
+
 def is_valid_signature(
     public_id: str, expires: int, inline: bool, signature: str, *, now: float | None = None
 ) -> bool:

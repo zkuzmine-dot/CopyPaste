@@ -11,7 +11,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.schemas.file import FileRead
+from app.schemas.file import LinkedFileRead
 from app.settings import settings
 
 NOTE_TEXT_MAX_LENGTH = 100_000
@@ -60,13 +60,6 @@ class NoteUpdate(BaseModel):
         return value
 
 
-class NoteFileRead(FileRead):
-    # None, пока ссылки выдавать нельзя — у непрочитанной одноразовой заметки
-    download_url: str | None
-    # Только у картинок и не у одноразовых заметок
-    preview_url: str | None
-
-
 class NoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,4 +70,4 @@ class NoteRead(BaseModel):
     updated_at: datetime
     expires_at: datetime | None
     burn_after_read: bool
-    files: list[NoteFileRead]
+    files: list[LinkedFileRead]

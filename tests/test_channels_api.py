@@ -93,7 +93,9 @@ def test_state_shows_messages(client, db, created, joined):
     messages = get_state(client, created["slug"], created["token"]).json()["messages"]
 
     assert [m["text"] for m in messages] == ["hello"]
-    assert set(messages[0]) == {"id", "text", "created_at", "expires_at"}
+    assert set(messages[0]) == {"id", "kind", "text", "file", "created_at", "expires_at"}
+    assert messages[0]["kind"] == "text"
+    assert messages[0]["file"] is None
 
 
 @pytest.mark.parametrize("token", [None, "wrong-token"], ids=["no-token", "wrong-token"])
