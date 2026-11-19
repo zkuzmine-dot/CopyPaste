@@ -19,6 +19,7 @@ def test_page_returns_html(page_client, path):
     assert "<textarea" in response.text
     assert '<script src="/static/app.js">' in response.text
     assert '<script src="/static/channel.js">' in response.text
+    assert '<script src="/static/files.js">' in response.text
 
 
 @pytest.mark.parametrize(
@@ -26,6 +27,7 @@ def test_page_returns_html(page_client, path):
     [
         ("/static/app.js", "javascript"),
         ("/static/channel.js", "javascript"),
+        ("/static/files.js", "javascript"),
         ("/static/style.css", "text/css"),
     ],
 )

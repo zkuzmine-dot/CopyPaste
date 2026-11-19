@@ -1,5 +1,7 @@
 const API_URL = "/api/notes";
+const FILES_API = "/api/files";
 const MAX_LENGTH = 100000;
+const MAX_NOTE_FILES = 10;
 
 const textEl = document.getElementById("text");
 const infoEl = document.getElementById("info");
@@ -21,11 +23,20 @@ const shareQrDownload = document.getElementById("share-qr-download");
 const homeViewEl = document.getElementById("home-view");
 const noteViewEl = document.getElementById("note-view");
 const channelViewEl = document.getElementById("channel-view");
+const attachBtn = document.getElementById("attach");
+const attachInput = document.getElementById("attach-input");
+const attachmentListEl = document.getElementById("attachment-list");
+const noteFilesEl = document.getElementById("note-files");
+const noteFilesHintEl = document.getElementById("note-files-hint");
+const burnFilesEl = document.getElementById("burn-files");
 
 let currentSlug = null;
 // Одноразовая заметка, которую ещё не показали: ждём подтверждения
 let pendingSlug = null;
 let statusTimer = null;
+let saving = false;
+// Файлы для новой заметки: загружаются сразу при выборе, в заметку уходят их id
+let attachments = [];
 
 function slugFromPath() {
   const match = location.pathname.match(/^\/n\/([^/]+)\/?$/);
@@ -81,9 +92,72 @@ function showEditor(visible) {
   burnConfirmEl.hidden = visible;
 }
 
+function updateSaveButton() {
+  const uploading = attachments.some((upload) => upload.state === "uploading");
+  saveBtn.disabled = saving || uploading;
+  if (saving) {
+    saveBtn.textContent = "Сохраняю…";
+  } else {
+    saveBtn.textContent = uploading ? "Загружаются файлы…" : "Сохранить";
+  }
+}
+
 function setBusy(busy) {
-  saveBtn.disabled = busy;
-  saveBtn.textContent = busy ? "Сохраняю…" : "Сохранить";
+  saving = busy;
+  updateSaveButton();
+}
+
+function addAttachments(files) {
+  const room = MAX_NOTE_FILES - attachments.length;
+  if (room <= 0) {
+    showStatus(`В заметке не больше ${MAX_NOTE_FILES} файлов`, "error");
+    return;
+  }
+  if (files.length > room) {
+    showStatus(`Добавлены первые ${room}: в заметке не больше ${MAX_NOTE_FILES} файлов`, "error");
+  }
+  for (const file of files.slice(0, room)) {
+    const upload = startUpload(file, {
+      url: () => FILES_API,
+      list: attachmentListEl,
+      onChange: updateSaveButton,
+      onRemoved: (removed) => {
+        attachments = attachments.filter((item) => item !== removed);
+        updateSaveButton();
+      },
+    });
+    attachments.push(upload);
+  }
+  updateSaveButton();
+}
+
+function clearAttachments() {
+  for (const upload of attachments) {
+    upload.state = "removed";
+    upload.request?.abort();
+  }
+  attachments = [];
+  attachmentListEl.replaceChildren();
+  updateSaveButton();
+}
+
+function clearNoteFiles() {
+  noteFilesEl.replaceChildren();
+  noteFilesEl.hidden = true;
+  noteFilesHintEl.hidden = true;
+}
+
+function renderNoteFiles(files, hint = "") {
+  noteFilesEl.replaceChildren(
+    ...files.map((file) => {
+      const item = el("li");
+      item.append(createFileCard(file).el);
+      return item;
+    }),
+  );
+  noteFilesEl.hidden = files.length === 0;
+  noteFilesHintEl.textContent = hint;
+  noteFilesHintEl.hidden = !hint || files.length === 0;
 }
 
 async function errorMessage(response) {
@@ -93,6 +167,10 @@ async function errorMessage(response) {
   if (response.status === 422) {
     try {
       const body = await response.json();
+      if (typeof body.detail === "string") {
+        // Файл привязать не удалось: загружен слишком давно или уже в другой заметке
+        return "Часть файлов недоступна — уберите их и загрузите заново";
+      }
       const msg = body.detail?.[0]?.msg;
       if (msg) {
         return `Некорректные данные: ${msg}`;
@@ -112,6 +190,8 @@ async function loadNote(slug) {
   textEl.value = "";
   updateCounter();
   statusEl.textContent = "";
+  clearAttachments();
+  clearNoteFiles();
 
   try {
     // GET ничего не сжигает: у одноразовой заметки text придёт как null
@@ -123,6 +203,12 @@ async function loadNote(slug) {
     const note = await response.json();
     if (note.burn_after_read) {
       pendingSlug = slug;
+      const count = note.files.length;
+      burnFilesEl.textContent = count
+        ? `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}: ` +
+          "после открытия каждый можно скачать один раз в течение 10 минут."
+        : "";
+      burnFilesEl.hidden = count === 0;
       showEditor(false);
       return;
     }
@@ -139,8 +225,13 @@ function showNote(note) {
     // Заметки на сервере больше нет — делиться нечем
     setNote(null);
     infoEl.textContent = "Заметка удалена с сервера — это был единственный просмотр";
+    renderNoteFiles(
+      note.files,
+      "Каждый файл можно скачать один раз в течение 10 минут — после этого он удалится.",
+    );
   } else {
     setNote(note);
+    renderNoteFiles(note.files);
   }
 }
 
@@ -163,13 +254,20 @@ async function revealNote() {
 }
 
 async function saveNote() {
+  if (attachments.some((upload) => upload.state === "error")) {
+    showStatus("Уберите файлы с ошибкой или загрузите их снова", "error");
+    return;
+  }
   const text = textEl.value;
-  if (!text.trim()) {
-    showStatus("Нечего сохранять — поле пустое", "error");
+  const fileIds = attachments
+    .filter((upload) => upload.state === "done")
+    .map((upload) => upload.id);
+  if (!text.trim() && fileIds.length === 0) {
+    showStatus("Нечего сохранять — нет ни текста, ни файлов", "error");
     return;
   }
 
-  const body = { text, burn_after_read: burnEl.checked };
+  const body = { text, file_ids: fileIds, burn_after_read: burnEl.checked };
   const seconds = Number(expiryEl.value);
   if (seconds > 0) {
     body.expires_at = new Date(Date.now() + seconds * 1000).toISOString();
@@ -189,6 +287,8 @@ async function saveNote() {
     const note = await response.json();
     history.pushState(null, "", `/n/${encodeURIComponent(note.slug)}`);
     setNote(note);
+    clearAttachments();
+    renderNoteFiles(note.files);
     showStatus("Сохранено");
   } catch {
     showStatus("Не удалось связаться с сервером", "error");
@@ -280,6 +380,8 @@ function route() {
     textEl.value = "";
     updateCounter();
     setNote(null);
+    clearAttachments();
+    clearNoteFiles();
     textEl.focus();
   } else {
     showView("home");
@@ -292,6 +394,8 @@ copyBtn.addEventListener("click", copyText);
 shareBtn.addEventListener("click", openShareDialog);
 shareCopyBtn.addEventListener("click", shareLink);
 burnRevealBtn.addEventListener("click", revealNote);
+bindFilePicker(attachBtn, attachInput, addAttachments);
+acceptDroppedAndPasted(editorAreaEl, textEl, addAttachments);
 
 // Клик по затемнённому фону вокруг окна закрывает его
 shareDialog.addEventListener("click", (event) => {
