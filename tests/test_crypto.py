@@ -1,0 +1,203 @@
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+
+import pytest
+
+from app.settings import Settings, settings
+from app.utils import crypto
+from app.utils.crypto import DecryptionError, derive_key, encrypt_note, unlock_note
+
+SLUG = "abcd2345"
+PASSWORD = "correct horse"
+TEXT = "Секретная заметка"
+
+
+@pytest.fixture(autouse=True)
+def fast_kdf(monkeypatch):
+    # Настоящие параметры стоят ~0,1 с на вызов: здесь проверяем логику, а не стойкость
+    monkeypatch.setattr(settings, "KDF_TIME_COST", 1)
+    monkeypatch.setattr(settings, "KDF_MEMORY_KIB", 1024)
+    monkeypatch.setattr(settings, "KDF_PARALLELISM", 1)
+
+
+def flip(data: bytes, index: int) -> bytes:
+    changed = bytearray(data)
+    changed[index] ^= 0x01
+    return bytes(changed)
+
+
+# --- туда и обратно ---
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Секретная заметка", "", "emoji 👋 и\nпереносы\tстрок", "я" * 100_000],
+    ids=["cyrillic", "empty", "emoji", "long"],
+)
+def test_roundtrip(text):
+    encrypted = encrypt_note(PASSWORD, text, SLUG)
+
+    assert unlock_note(PASSWORD, encrypted, SLUG) == text
+
+
+def test_ciphertext_does_not_contain_text():
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+
+    assert TEXT.encode() not in encrypted.ciphertext
+    assert TEXT.encode() not in encrypted.wrapped_key
+
+
+def test_same_input_gives_different_output():
+    # Случайные соль, ключ данных и nonce: по шифротексту не видно, что заметки одинаковые
+    first = encrypt_note(PASSWORD, TEXT, SLUG)
+    second = encrypt_note(PASSWORD, TEXT, SLUG)
+
+    assert first.kdf.salt != second.kdf.salt
+    assert first.wrapped_key != second.wrapped_key
+    assert first.ciphertext != second.ciphertext
+
+
+# --- неверный пароль и повреждения ---
+
+
+@pytest.mark.parametrize(
+    "password",
+    ["wrong password", "Correct horse", "correct horse ", ""],
+    ids=["other", "case", "trailing_space", "empty"],
+)
+def test_wrong_password(password):
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+
+    with pytest.raises(DecryptionError):
+        unlock_note(password, encrypted, SLUG)
+
+
+@pytest.mark.parametrize(
+    ("field", "index"),
+    [
+        ("ciphertext", 0),
+        ("ciphertext", 20),
+        ("ciphertext", -1),
+        ("wrapped_key", 0),
+        ("wrapped_key", 20),
+        ("wrapped_key", -1),
+    ],
+    ids=[
+        "text_nonce",
+        "text_body",
+        "text_tag",
+        "key_nonce",
+        "key_body",
+        "key_tag",
+    ],
+)
+def test_tampering_is_detected(field, index):
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+    tampered = replace(encrypted, **{field: flip(getattr(encrypted, field), index)})
+
+    with pytest.raises(DecryptionError):
+        unlock_note(PASSWORD, tampered, SLUG)
+
+
+def test_changed_salt_is_detected():
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+    tampered = replace(encrypted, kdf=replace(encrypted.kdf, salt=flip(encrypted.kdf.salt, 0)))
+
+    with pytest.raises(DecryptionError):
+        unlock_note(PASSWORD, tampered, SLUG)
+
+
+@pytest.mark.parametrize(
+    "length", [-1, 27, 0], ids=["minus_one_byte", "shorter_than_nonce_and_tag", "empty"]
+)
+def test_truncated_ciphertext(length):
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+    truncated = replace(encrypted, ciphertext=encrypted.ciphertext[:length])
+
+    with pytest.raises(DecryptionError):
+        unlock_note(PASSWORD, truncated, SLUG)
+
+
+def test_data_copied_to_another_note_does_not_open():
+    # Кто-то с доступом к БД скопировал зашифрованные колонки одной заметки в другую.
+    # Пароль верный, но шифротекст привязан к slug — подмену видно
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+
+    with pytest.raises(DecryptionError):
+        unlock_note(PASSWORD, encrypted, "zzzz2345")
+
+
+# --- пароль и параметры ---
+
+
+def test_password_unicode_forms_are_equal():
+    composed = "пароль-й"  # «й» одним символом
+    decomposed = "пароль-й"  # «и» + кратка
+    encrypted = encrypt_note(composed, TEXT, SLUG)
+
+    assert unlock_note(decomposed, encrypted, SLUG) == TEXT
+
+
+def test_stored_params_are_used(monkeypatch):
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+    # Параметры по умолчанию ужесточили — старая заметка открывается со своими
+    monkeypatch.setattr(settings, "KDF_TIME_COST", 2)
+    monkeypatch.setattr(settings, "KDF_MEMORY_KIB", 2048)
+
+    assert encrypted.kdf.time_cost == 1
+    assert encrypted.kdf.memory_kib == 1024
+    assert unlock_note(PASSWORD, encrypted, SLUG) == TEXT
+
+
+def test_derive_key():
+    params = crypto.new_kdf_params()
+
+    key = derive_key(PASSWORD, params)
+
+    assert len(key) == crypto.KEY_BYTES
+    assert derive_key(PASSWORD, params) == key
+    assert derive_key(PASSWORD, replace(params, salt=flip(params.salt, 0))) != key
+
+
+def test_default_params_work(monkeypatch):
+    for name in ("KDF_TIME_COST", "KDF_MEMORY_KIB", "KDF_PARALLELISM"):
+        monkeypatch.setattr(settings, name, Settings.model_fields[name].default)
+
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG)
+
+    assert (encrypted.kdf.time_cost, encrypted.kdf.memory_kib, encrypted.kdf.parallelism) == (
+        10,
+        65_536,
+        4,
+    )
+    assert unlock_note(PASSWORD, encrypted, SLUG) == TEXT
+
+
+# --- предел одновременных вычислений ---
+
+
+def test_concurrent_kdf_is_limited(monkeypatch):
+    monkeypatch.setattr(crypto, "_kdf_slots", threading.BoundedSemaphore(2))
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def slow_hash(**kwargs) -> bytes:
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.1)
+        with lock:
+            active -= 1
+        return b"k" * crypto.KEY_BYTES
+
+    monkeypatch.setattr(crypto, "hash_secret_raw", slow_hash)
+    params = crypto.new_kdf_params()
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(lambda _: derive_key(PASSWORD, params), range(6)))
+
+    assert max_active == 2

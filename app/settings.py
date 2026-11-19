@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
     NOTE_PASSWORD_MIN_LENGTH: int = 4
     NOTE_PASSWORD_MAX_LENGTH: int = 128
-    KDF_TIME_COST: int = 3
+    KDF_TIME_COST: int = 10
     KDF_MEMORY_KIB: int = 65_536
     KDF_PARALLELISM: int = 4
     KDF_MAX_CONCURRENT: int = 4
