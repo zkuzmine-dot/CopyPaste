@@ -101,7 +101,9 @@ def test_send_during_role_swap_is_rejected(committed, monkeypatch):
             channels_service.become_sender(db, load_participant(db, ParticipantRole.RECEIVER))
 
     def send() -> str:
-        with factory() as db:
+        # expire_on_commit=False, как будет в async: после коммита объект не перечитывается
+        # и остаётся устаревшим — ради этого его и загружаем заранее
+        with factory(expire_on_commit=False) as db:
             # Загружаем отправителя до смены ролей — в его объекте ещё роль sender
             old_sender = load_participant(db, ParticipantRole.SENDER)
             db.commit()
@@ -212,7 +214,7 @@ def test_send_file_during_role_swap_is_rejected(committed, monkeypatch):
             channels_service.become_sender(db, load_participant(db, ParticipantRole.RECEIVER))
 
     def send() -> str:
-        with factory() as db:
+        with factory(expire_on_commit=False) as db:
             old_sender = load_participant(db, ParticipantRole.SENDER)
             db.commit()
             swap_holds_lock.wait()

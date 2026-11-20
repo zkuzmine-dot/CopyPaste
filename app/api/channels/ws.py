@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, joinedload, sessionmaker
+from sqlalchemy.orm.interfaces import ORMOption
 
 from app.api.channels.presenters import live_messages_read, message_read
 from app.db.connection import run_db
@@ -102,16 +103,17 @@ class LoadedState:
     messages: list[MessageRead]
 
 
-def _get_participant(db: Session, participant_id: int) -> Participant:
+def _get_participant(db: Session, participant_id: int, *options: ORMOption) -> Participant:
     # Чистка удаляет канал вместе с участниками, пока вкладка ещё открыта
-    participant = db.get(Participant, participant_id)
+    participant = db.get(Participant, participant_id, options=options)
     if participant is None:
         raise channels_service.ChannelNotFoundError
     return participant
 
 
 def _load_state(db: Session, participant_id: int) -> LoadedState:
-    participant = _get_participant(db, participant_id)
+    # Канал — тем же запросом: сама связь не догружается (lazy="raise")
+    participant = _get_participant(db, participant_id, joinedload(Participant.channel))
     channel = participant.channel
     return LoadedState(
         role=ParticipantRole(participant.role),

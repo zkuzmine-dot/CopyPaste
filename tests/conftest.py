@@ -4,8 +4,8 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, make_url, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, event, make_url, text
+from sqlalchemy.orm import ORMExecuteState, Session, sessionmaker
 
 from app.api.files.routes import create_upload_rate_limiter
 from app.db.redis import create_redis
@@ -19,6 +19,27 @@ TEST_DATABASE_URL = make_url(settings.DATABASE_URL).set(
 # Отдельная логическая база Redis: тесты не трогают счётчики и заморозки приложения
 TEST_REDIS_DB = 15
 TEST_REDIS_URL = urlsplit(settings.REDIS_URL)._replace(path=f"/{TEST_REDIS_DB}").geturl()
+
+
+class ImplicitLoadError(AssertionError):
+    pass
+
+
+def _forbid_implicit_loads(state: ORMExecuteState) -> None:
+    # Ленивая связь или протухший атрибут (после коммита, flush с SQL-выражением, bulk
+    # UPDATE) догружаются скрытым SELECT. В async такой запрос падает с MissingGreenlet,
+    # поэтому ловим его заранее. Явный refresh() — не скрытый, его пропускаем
+    if state.is_relationship_load or (
+        state.is_column_load and not state.load_options._is_user_refresh
+    ):
+        raise ImplicitLoadError(f"Implicit load: {state.statement}")
+
+
+@pytest.fixture(autouse=True)
+def no_implicit_loads():
+    event.listen(Session, "do_orm_execute", _forbid_implicit_loads)
+    yield
+    event.remove(Session, "do_orm_execute", _forbid_implicit_loads)
 
 
 def _recreate_test_database() -> None:

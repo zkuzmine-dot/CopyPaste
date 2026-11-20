@@ -21,6 +21,14 @@ def sender(db, receiver) -> Participant:
     return participant
 
 
+def channel_of(db, participant: Participant) -> Channel:
+    # Явно: связь participant.channel не догружается сама (lazy="raise"), а после refresh
+    # в сервисе её в объекте уже нет
+    channel = db.get(Channel, participant.channel_id)
+    assert channel is not None
+    return channel
+
+
 def set_last_activity(db, channel: Channel, seconds_ago: int) -> None:
     db.execute(
         update(Channel)
@@ -53,7 +61,7 @@ def test_join_channel(db, receiver):
 def test_join_after_creator_became_sender(db, receiver):
     channels_service.become_sender(db, receiver)
 
-    participant, _ = channels_service.join_channel(db, receiver.channel.slug)
+    participant, _ = channels_service.join_channel(db, channel_of(db, receiver).slug)
 
     assert receiver.role == ParticipantRole.SENDER
     assert participant.role == ParticipantRole.RECEIVER
@@ -135,19 +143,20 @@ def test_add_message_by_receiver_not_allowed(db, receiver, sender):
 
 
 def test_add_message_updates_activity(db, sender):
-    set_last_activity(db, sender.channel, 60)
+    channel = channel_of(db, sender)
+    set_last_activity(db, channel, 60)
 
     channels_service.add_message(db, sender, "hello")
 
-    db.refresh(sender.channel)
-    assert sender.channel.last_activity_at == db.scalar(select(func.now()))
+    db.refresh(channel)
+    assert channel.last_activity_at == db.scalar(select(func.now()))
 
 
 def test_get_live_messages_in_order(db, sender):
     first = channels_service.add_message(db, sender, "first")
     second = channels_service.add_message(db, sender, "second")
 
-    assert channels_service.get_live_messages(db, sender.channel) == [first, second]
+    assert channels_service.get_live_messages(db, channel_of(db, sender)) == [first, second]
 
 
 def test_get_live_messages_skips_expired(db, sender):
@@ -159,7 +168,7 @@ def test_get_live_messages_skips_expired(db, sender):
         .values(expires_at=func.now() - timedelta(seconds=1))
     )
 
-    assert channels_service.get_live_messages(db, sender.channel) == [alive]
+    assert channels_service.get_live_messages(db, channel_of(db, sender)) == [alive]
 
 
 # --- роли ---
@@ -252,7 +261,7 @@ def test_delete_inactive_channels(db, sender):
     closed, _ = channels_service.create_channel(db)
     set_last_activity(db, idle.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
     channels_service.close_channel(db, closed.channel)
-    set_last_activity(db, sender.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
+    set_last_activity(db, channel_of(db, sender), settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
 
     assert channels_service.delete_inactive_channels(db) == 3
     assert db.scalars(select(Channel.id)).all() == []

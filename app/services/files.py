@@ -3,7 +3,18 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import cast
 
-from sqlalchemy import ColumnElement, and_, case, delete, exists, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    insert,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.orm import Session
 
 from app.db.models.channel import Channel, Message
@@ -72,18 +83,21 @@ def create_upload(
     origin: FileOrigin,
     uploaded_by_id: int | None = None,
 ) -> StoredFile:
-    stored = StoredFile(
-        storage_key=storage_key,
-        name=name,
-        content_type=content_type,
-        size_bytes=size_bytes,
-        origin=origin,
-        uploaded_by_id=uploaded_by_id,
-        keep_until=func.now() + timedelta(seconds=settings.PENDING_UPLOAD_TTL_SECONDS),
+    # INSERT ... RETURNING: срок считает БД и сразу возвращает его в объекте (как у сообщений)
+    stmt = (
+        insert(StoredFile)
+        .values(
+            storage_key=storage_key,
+            name=name,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            origin=origin,
+            uploaded_by_id=uploaded_by_id,
+            keep_until=func.now() + timedelta(seconds=settings.PENDING_UPLOAD_TTL_SECONDS),
+        )
+        .returning(StoredFile)
     )
-    db.add(stored)
-    db.flush()
-    return stored
+    return db.scalars(stmt).one()
 
 
 def total_size(db: Session) -> int:

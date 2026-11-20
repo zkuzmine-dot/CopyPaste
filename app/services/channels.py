@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any, cast
 
-from sqlalchemy import ColumnElement, CursorResult, and_, delete, func, select, update
+from sqlalchemy import ColumnElement, CursorResult, and_, delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.channel import Channel, Message, MessageKind, Participant, ParticipantRole
@@ -106,17 +106,30 @@ def _lock_as_sender(db: Session, participant: Participant) -> None:
         raise ActionNotAllowedError
 
 
+def _insert_message(
+    db: Session, participant: Participant, kind: MessageKind, text: str | None, ttl: int
+) -> Message:
+    # INSERT ... RETURNING, а не db.add: срок считает БД (её now()), и он сразу приходит в
+    # объект. После обычного flush атрибут с SQL-выражением «протухает» и догружается
+    # скрытым SELECT при чтении — в async так нельзя
+    stmt = (
+        insert(Message)
+        .values(
+            channel_id=participant.channel_id,
+            sender_id=participant.id,
+            kind=kind,
+            text=text,
+            expires_at=func.now() + timedelta(seconds=ttl),
+        )
+        .returning(Message)
+    )
+    return db.scalars(stmt).one()
+
+
 def add_message(db: Session, participant: Participant, text: str) -> Message:
     _lock_as_sender(db, participant)
-    message = Message(
-        channel_id=participant.channel_id,
-        sender_id=participant.id,
-        text=text,
-        expires_at=func.now() + timedelta(seconds=settings.MESSAGE_TTL_SECONDS),
-    )
-    db.add(message)
+    message = _insert_message(db, participant, MessageKind.TEXT, text, settings.MESSAGE_TTL_SECONDS)
     _touch(db, participant.channel_id)
-    db.flush()
     return message
 
 
@@ -125,21 +138,14 @@ def add_file_message(
 ) -> tuple[Message, StoredFile]:
     """FilesNotAvailableError, если файл не свой или уже отправлен: транзакцию нужно откатить."""
     _lock_as_sender(db, participant)
-    message = Message(
-        channel_id=participant.channel_id,
-        sender_id=participant.id,
-        kind=MessageKind.FILE,
-        text=None,
-        # Дольше текста: большой файл по медленной сети успевает скачаться
-        expires_at=func.now() + timedelta(seconds=settings.CHANNEL_FILE_TTL_SECONDS),
+    # Дольше текста: большой файл по медленной сети успевает скачаться
+    message = _insert_message(
+        db, participant, MessageKind.FILE, None, settings.CHANNEL_FILE_TTL_SECONDS
     )
-    db.add(message)
-    db.flush()
     stored = files_service.attach_to_message(
         db, message.id, public_id, uploaded_by_id=participant.id
     )
     _touch(db, participant.channel_id)
-    db.flush()
     return message, stored
 
 
