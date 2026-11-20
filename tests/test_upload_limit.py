@@ -31,9 +31,12 @@ def test_tokens_refill_over_time(redis_client):
     assert limiter.allow(IP)
     assert not limiter.allow(IP)
 
-    time.sleep(0.15)
-
-    assert limiter.allow(IP)
+    # Токен копится 0,1 с по часам Redis. Ждём с запасом, а не ровно: системные часы
+    # в Docker Desktop подводит синхронизация. Отказ токен не тратит — опрашивать можно
+    deadline = time.monotonic() + 2
+    while not limiter.allow(IP):
+        assert time.monotonic() < deadline, "token was not refilled"
+        time.sleep(0.05)
 
 
 def test_limit_is_shared_between_processes(redis_client):

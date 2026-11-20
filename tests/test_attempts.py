@@ -13,6 +13,15 @@ IP, OTHER_IP = "203.0.113.7", "198.51.100.9"
 SLUG, OTHER_SLUG = "abcd2345", "zzzz2345"
 
 
+def wait_for_expiry(redis_client, key: str, timeout: float = 3) -> None:
+    # Не фиксированный sleep: Redis считает срок по системным часам, а их в Docker Desktop
+    # подводит синхронизация — запаса в 100 мс иногда не хватало
+    deadline = time.monotonic() + timeout
+    while redis_client.exists(key):
+        assert time.monotonic() < deadline, f"{key} did not expire"
+        time.sleep(0.05)
+
+
 @pytest.fixture
 def attempts(redis_client) -> PasswordAttempts:
     return PasswordAttempts(redis_client)
@@ -95,23 +104,23 @@ def test_counters_always_have_expiry(attempts, limits, redis_client):
     assert 899 <= redis_client.ttl(f"pw:fail:ip:{IP}") <= 900
 
 
-def test_failure_window_expires(attempts, limits):
+def test_failure_window_expires(attempts, limits, redis_client):
     limits(NOTE_MAX_FAILURES=2, NOTE_WINDOW_SECONDS=1, IP_MAX_FAILURES=100)
     attempts.record_failure(IP, SLUG)
 
-    time.sleep(1.1)
+    wait_for_expiry(redis_client, f"pw:fail:note:{SLUG}")
 
     # Окно прошло: старая ошибка забыта, новая заметку не блокирует
     assert attempts.record_failure(IP, SLUG) == 1
     assert attempts.retry_after(IP, SLUG) is None
 
 
-def test_lock_expires(attempts, limits):
+def test_lock_expires(attempts, limits, redis_client):
     limits(NOTE_MAX_FAILURES=1, NOTE_LOCK_SECONDS=1, IP_MAX_FAILURES=100)
     attempts.record_failure(IP, SLUG)
     assert attempts.retry_after(IP, SLUG) == 1
 
-    time.sleep(1.1)
+    wait_for_expiry(redis_client, f"pw:lock:note:{SLUG}")
 
     assert attempts.retry_after(IP, SLUG) is None
 
