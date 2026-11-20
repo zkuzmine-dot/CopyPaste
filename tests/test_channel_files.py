@@ -25,13 +25,13 @@ def factory(engine):
 
 
 @pytest.fixture
-def client(engine, factory, file_storage):
+def client(engine, factory, file_storage, redis_client):
     # Как в test_channels_ws: настоящие коммиты и один event loop на все соединения.
     # Хранилище — во временной папке, а не в томе приложения
     with TestClient(app) as client:
         app.state.session_factory = factory
         app.state.file_storage = file_storage
-        app.state.upload_rate_limiter = create_upload_rate_limiter()
+        app.state.upload_rate_limiter = create_upload_rate_limiter(redis_client)
         yield client
     with engine.begin() as conn:
         conn.execute(delete(Channel))

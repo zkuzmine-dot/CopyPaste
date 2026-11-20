@@ -2,6 +2,8 @@ const API_URL = "/api/notes";
 const FILES_API = "/api/files";
 const MAX_LENGTH = 100000;
 const MAX_NOTE_FILES = 10;
+const PASSWORD_MIN_LENGTH = 4;
+const PASSWORD_MAX_LENGTH = 128;
 
 const textEl = document.getElementById("text");
 const infoEl = document.getElementById("info");
@@ -29,10 +31,20 @@ const attachmentListEl = document.getElementById("attachment-list");
 const noteFilesEl = document.getElementById("note-files");
 const noteFilesHintEl = document.getElementById("note-files-hint");
 const burnFilesEl = document.getElementById("burn-files");
+const passwordEl = document.getElementById("note-password");
+const passwordToggleBtn = document.getElementById("toggle-password");
+const passwordHintEl = document.getElementById("password-hint");
+const unlockEl = document.getElementById("unlock");
+const unlockInfoEl = document.getElementById("unlock-info");
+const unlockFormEl = document.getElementById("unlock-form");
+const unlockPasswordEl = document.getElementById("unlock-password");
+const unlockSubmitBtn = document.getElementById("unlock-submit");
+const unlockErrorEl = document.getElementById("unlock-error");
 
 let currentSlug = null;
-// Одноразовая заметка, которую ещё не показали: ждём подтверждения
+// Заметка, которую ещё не показали: ждём подтверждения или пароля
 let pendingSlug = null;
+let unlockTimer = null;
 let statusTimer = null;
 let saving = false;
 // Файлы для новой заметки: загружаются сразу при выборе, в заметку уходят их id
@@ -80,6 +92,9 @@ function setNote(note) {
     return;
   }
   const parts = [];
+  if (note.has_password) {
+    parts.push("Защищена паролем");
+  }
   if (note.burn_after_read) {
     parts.push("Удалится после первого прочтения");
   }
@@ -87,9 +102,28 @@ function setNote(note) {
   infoEl.textContent = parts.join(" · ");
 }
 
-function showEditor(visible) {
-  editorAreaEl.hidden = !visible;
-  burnConfirmEl.hidden = visible;
+function showScreen(name) {
+  editorAreaEl.hidden = name !== "editor";
+  burnConfirmEl.hidden = name !== "burn";
+  unlockEl.hidden = name !== "unlock";
+}
+
+function passwordLength(value) {
+  // Сервер считает символы, а не UTF-16: эмодзи — один символ, а не два
+  return [...value].length;
+}
+
+function resetPasswordField() {
+  passwordEl.value = "";
+  passwordEl.type = "password";
+  passwordToggleBtn.textContent = "Показать";
+  passwordHintEl.hidden = true;
+}
+
+function togglePasswordVisibility() {
+  const show = passwordEl.type === "password";
+  passwordEl.type = show ? "text" : "password";
+  passwordToggleBtn.textContent = show ? "Скрыть" : "Показать";
 }
 
 function updateSaveButton() {
@@ -183,10 +217,149 @@ async function errorMessage(response) {
   return `Ошибка сервера (${response.status})`;
 }
 
+function burnFilesText(count) {
+  return count
+    ? `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}: ` +
+        "после открытия каждый можно скачать один раз в течение 10 минут."
+    : "";
+}
+
+function showUnlockError(message) {
+  unlockErrorEl.textContent = message;
+  unlockErrorEl.hidden = !message;
+}
+
+function stopUnlockCountdown() {
+  clearInterval(unlockTimer);
+  unlockTimer = null;
+  unlockSubmitBtn.disabled = false;
+}
+
+function startUnlockCountdown(seconds) {
+  stopUnlockCountdown();
+  const until = Date.now() + seconds * 1000;
+  const tick = () => {
+    const left = Math.ceil((until - Date.now()) / 1000);
+    if (left <= 0) {
+      stopUnlockCountdown();
+      showUnlockError("");
+      unlockPasswordEl.focus();
+      return;
+    }
+    const wait = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+    showUnlockError(`Слишком много неверных попыток. Попробуйте снова через ${wait}`);
+  };
+  unlockSubmitBtn.disabled = true;
+  tick();
+  unlockTimer = setInterval(tick, 1000);
+}
+
+function showUnlock(note) {
+  const count = note.files.length;
+  let info = "";
+  if (note.burn_after_read) {
+    info = "После открытия заметка удалится с сервера — открыть её можно только один раз. " +
+      burnFilesText(count);
+  } else if (count) {
+    info = `В заметке ${count} ${plural(count, "файл", "файла", "файлов")} — они откроются вместе с текстом.`;
+  }
+  unlockInfoEl.textContent = info.trim();
+  unlockInfoEl.hidden = !info;
+  unlockPasswordEl.value = "";
+  showUnlockError("");
+  showScreen("unlock");
+  unlockPasswordEl.focus();
+}
+
+async function unlockFailure(response) {
+  switch (response.status) {
+    case 403: {
+      const body = await response.json().catch(() => null);
+      const left = body?.detail?.attempts_left;
+      if (typeof left !== "number") {
+        return "Неверный пароль";
+      }
+      if (left === 0) {
+        return "Неверный пароль. Попытки закончились — ввод пароля временно заморожен";
+      }
+      return `Неверный пароль. Осталось ${left} ${plural(left, "попытка", "попытки", "попыток")}`;
+    }
+    case 422:
+      return `Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`;
+    case 503:
+      return "Проверка пароля временно недоступна — попробуйте через минуту";
+    default:
+      return `Ошибка сервера (${response.status})`;
+  }
+}
+
+async function unlockNote(event) {
+  event.preventDefault();
+  const slug = pendingSlug;
+  const password = unlockPasswordEl.value;
+  if (!slug || unlockSubmitBtn.disabled) {
+    return;
+  }
+  const length = passwordLength(password);
+  if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
+    showUnlockError(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`);
+    return;
+  }
+
+  unlockSubmitBtn.disabled = true;
+  unlockSubmitBtn.textContent = "Проверяю…";
+  showUnlockError("");
+  try {
+    const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}/unlock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    // Пока ждали ответ, пользователь мог уйти на другую страницу
+    if (slug !== pendingSlug) {
+      return;
+    }
+    if (response.ok) {
+      const note = await response.json();
+      pendingSlug = null;
+      unlockPasswordEl.value = "";
+      showScreen("editor");
+      showNote(note);
+      return;
+    }
+    if (response.status === 404) {
+      pendingSlug = null;
+      showScreen("editor");
+      showStatus(await errorMessage(response), "error");
+      return;
+    }
+    // Retry-After приходит с 429 и с той неверной попыткой (403), что включила заморозку
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    if ((response.status === 429 || response.status === 403) && retryAfter > 0) {
+      startUnlockCountdown(retryAfter);
+      return;
+    }
+    if (response.status === 429) {
+      showUnlockError("Слишком много неверных попыток. Попробуйте позже");
+      return;
+    }
+    showUnlockError(await unlockFailure(response));
+    unlockPasswordEl.select();
+  } catch {
+    showUnlockError("Не удалось связаться с сервером");
+  } finally {
+    unlockSubmitBtn.textContent = "Открыть";
+    if (!unlockTimer) {
+      unlockSubmitBtn.disabled = false;
+    }
+  }
+}
+
 async function loadNote(slug) {
   setNote(null);
   pendingSlug = null;
-  showEditor(true);
+  stopUnlockCountdown();
+  showScreen("editor");
   textEl.value = "";
   updateCounter();
   statusEl.textContent = "";
@@ -201,15 +374,17 @@ async function loadNote(slug) {
       return;
     }
     const note = await response.json();
+    // Текст и ссылки на файлы такой заметки придут только в ответ на верный пароль
+    if (note.has_password) {
+      pendingSlug = slug;
+      showUnlock(note);
+      return;
+    }
     if (note.burn_after_read) {
       pendingSlug = slug;
-      const count = note.files.length;
-      burnFilesEl.textContent = count
-        ? `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}: ` +
-          "после открытия каждый можно скачать один раз в течение 10 минут."
-        : "";
-      burnFilesEl.hidden = count === 0;
-      showEditor(false);
+      burnFilesEl.textContent = burnFilesText(note.files.length);
+      burnFilesEl.hidden = note.files.length === 0;
+      showScreen("burn");
       return;
     }
     showNote(note);
@@ -238,7 +413,7 @@ function showNote(note) {
 async function revealNote() {
   const slug = pendingSlug;
   pendingSlug = null;
-  showEditor(true);
+  showScreen("editor");
   try {
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}/read`, {
       method: "POST",
@@ -272,6 +447,16 @@ async function saveNote() {
   if (seconds > 0) {
     body.expires_at = new Date(Date.now() + seconds * 1000).toISOString();
   }
+  const password = passwordEl.value;
+  if (password) {
+    const length = passwordLength(password);
+    if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
+      showStatus(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
+      passwordEl.focus();
+      return;
+    }
+    body.password = password;
+  }
 
   setBusy(true);
   try {
@@ -288,7 +473,11 @@ async function saveNote() {
     history.pushState(null, "", `/n/${encodeURIComponent(note.slug)}`);
     setNote(note);
     clearAttachments();
-    renderNoteFiles(note.files);
+    resetPasswordField();
+    renderNoteFiles(
+      note.files,
+      note.has_password ? "Скачать файлы можно будет после ввода пароля." : "",
+    );
     showStatus("Сохранено");
   } catch {
     showStatus("Не удалось связаться с сервером", "error");
@@ -376,12 +565,14 @@ function route() {
   } else if (location.pathname === "/note") {
     showView("note");
     pendingSlug = null;
-    showEditor(true);
+    stopUnlockCountdown();
+    showScreen("editor");
     textEl.value = "";
     updateCounter();
     setNote(null);
     clearAttachments();
     clearNoteFiles();
+    resetPasswordField();
     textEl.focus();
   } else {
     showView("home");
@@ -394,6 +585,17 @@ copyBtn.addEventListener("click", copyText);
 shareBtn.addEventListener("click", openShareDialog);
 shareCopyBtn.addEventListener("click", shareLink);
 burnRevealBtn.addEventListener("click", revealNote);
+unlockFormEl.addEventListener("submit", unlockNote);
+passwordToggleBtn.addEventListener("click", togglePasswordVisibility);
+passwordEl.addEventListener("input", () => {
+  passwordHintEl.hidden = !passwordEl.value;
+});
+passwordEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveNote();
+  }
+});
 bindFilePicker(attachBtn, attachInput, addAttachments);
 acceptDroppedAndPasted(editorAreaEl, textEl, addAttachments);
 

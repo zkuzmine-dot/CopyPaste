@@ -4,20 +4,24 @@ from typing import Annotated
 
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from redis import Redis
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
+from app.api.client import client_ip
 from app.db.connection import run_db
 from app.db.models.file import FileOrigin
 from app.realtime.manager import ChannelManager
-from app.realtime.rate_limit import KeyedRateLimiter
 from app.schemas.channel_events import FileDownloadedEvent
 from app.schemas.file import FileRead
+from app.security.file_keys import FileKeys, FileKeysUnavailableError
+from app.security.upload_limit import UploadRateLimiter
 from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import FileStorage, FileTooLargeError, new_storage_key
-from app.utils import signing
+from app.storage.encrypted import encrypted_download
+from app.utils import crypto, signing
 from app.utils.file_types import (
     SNIFF_BYTES,
     clean_filename,
@@ -47,9 +51,9 @@ RAW_FILE_BODY = {
 }
 
 
-def create_upload_rate_limiter() -> KeyedRateLimiter:
-    return KeyedRateLimiter(
-        settings.UPLOAD_RATE_LIMIT_PER_MINUTE / 60, settings.UPLOAD_RATE_LIMIT_BURST
+def create_upload_rate_limiter(redis: Redis) -> UploadRateLimiter:
+    return UploadRateLimiter(
+        redis, settings.UPLOAD_RATE_LIMIT_PER_MINUTE / 60, settings.UPLOAD_RATE_LIMIT_BURST
     )
 
 
@@ -72,8 +76,9 @@ async def receive_upload(
 
     Сессию БД во время чтения не держим: медленные загрузки иначе заняли бы весь пул.
     """
-    limiter: KeyedRateLimiter = request.app.state.upload_rate_limiter
-    if not limiter.allow(request.client.host if request.client else "unknown"):
+    limiter: UploadRateLimiter = request.app.state.upload_rate_limiter
+    # В пуле потоков: клиент Redis синхронный, а зависший Redis держал бы цикл событий
+    if not await run_in_threadpool(limiter.allow, client_ip(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
 
     # Content-Length проверяем до чтения, но не полагаемся на него: его может не быть
@@ -153,19 +158,47 @@ class _Download:
     storage_key: str
     name: str
     content_type: str
+    encryption_nonce: bytes | None
+    chunk_size: int | None
 
 
 def _find_download(db: Session, public_id: str) -> _Download | None:
     stored = files_service.get_available_file(db, public_id)
     if stored is None:
         return None
-    return _Download(stored.storage_key, stored.name, stored.content_type)
+    return _Download(
+        stored.storage_key,
+        stored.name,
+        stored.content_type,
+        stored.encryption_nonce,
+        stored.chunk_size,
+    )
 
 
-def _check_link(public_id: str, exp: int, inline: bool, sig: str) -> None:
+def _check_link(public_id: str, exp: int, inline: bool, sig: str, key_id: str | None) -> None:
     # Подпись проверяется без БД: по чужой или старой ссылке до базы дело не доходит
-    if not signing.is_valid_signature(public_id, exp, inline, sig):
+    if not signing.is_valid_signature(public_id, exp, inline, sig, key_id=key_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid or expired link")
+
+
+async def _file_cipher(
+    request: Request, found: _Download, public_id: str, key_id: str | None
+) -> crypto.FileCipher:
+    assert found.encryption_nonce is not None and found.chunk_size is not None
+    expired = HTTPException(
+        status.HTTP_403_FORBIDDEN, detail="Link has expired: open the note with the password again"
+    )
+    if key_id is None:
+        raise expired
+    try:
+        key = await run_in_threadpool(FileKeys(request.app.state.redis).get, key_id)
+    except FileKeysUnavailableError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail="File is temporarily unavailable"
+        ) from None
+    if key is None:
+        raise expired
+    return crypto.FileCipher(key, found.encryption_nonce, public_id, found.chunk_size)
 
 
 @router.get(
@@ -177,13 +210,22 @@ def _check_link(public_id: str, exp: int, inline: bool, sig: str) -> None:
         400: {"description": "Preview is only available for images"},
         403: {"description": "Invalid or expired link"},
         410: {"description": "File is no longer available"},
+        416: {"description": "Range is outside the file"},
+        503: {"description": "Key of an encrypted file is temporarily unavailable"},
     },
-    description="Скачивание ничего не удаляет: одноразовый файл удаляется по POST /received.",
+    description="Скачивание ничего не удаляет: одноразовый файл удаляется по POST /received. "
+    "key_id есть в ссылках на файлы заметок с паролем: по нему находится ключ, которым файл "
+    "расшифровывается на лету.",
 )
 async def download_file(
-    request: Request, public_id: str, exp: int, sig: str, inline: bool = False
+    request: Request,
+    public_id: str,
+    exp: int,
+    sig: str,
+    inline: bool = False,
+    key_id: str | None = None,
 ) -> Response:
-    _check_link(public_id, exp, inline, sig)
+    _check_link(public_id, exp, inline, sig, key_id)
     factory: sessionmaker[Session] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     found = await run_db(factory, lambda db: _find_download(db, public_id))
@@ -199,7 +241,19 @@ async def download_file(
         "Content-Disposition": content_disposition(found.name, inline=inline),
     }
     try:
-        return storage.download(found.storage_key, media_type=found.content_type, headers=headers)
+        if found.encryption_nonce is None:
+            return storage.download(
+                found.storage_key, media_type=found.content_type, headers=headers
+            )
+        return encrypted_download(
+            storage,
+            found.storage_key,
+            await _file_cipher(request, found, public_id, key_id),
+            media_type=found.content_type,
+            headers=headers,
+            range_header=request.headers.get("range"),
+            if_range=request.headers.get("if-range"),
+        )
     except FileNotFoundError:
         raise _gone() from None
 
@@ -215,7 +269,7 @@ async def download_file(
 async def confirm_received(request: Request, public_id: str, exp: int, sig: str) -> None:
     # Только клиент знает, что получил файл: сервер видит лишь, что передал байты ядру,
     # а файл в несколько мегабайт целиком уходит в буферы сокетов ещё до обрыва связи
-    _check_link(public_id, exp, False, sig)
+    _check_link(public_id, exp, False, sig, None)
     factory: sessionmaker[Session] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     deleted = await run_db(factory, lambda db: files_service.delete_received(db, public_id))

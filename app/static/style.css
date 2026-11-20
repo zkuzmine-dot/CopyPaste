@@ -126,6 +126,44 @@ body {
   accent-color: var(--accent);
 }
 
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.password-input {
+  width: 210px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+/* У поля в редакторе своя кнопка «Показать» — встроенный «глаз» Edge её дублирует */
+.password-field .password-input::-ms-reveal {
+  display: none;
+}
+
+.unlock-form {
+  display: flex;
+  gap: 8px;
+  width: min(420px, 100%);
+}
+
+.unlock-form .password-input {
+  flex: 1;
+  width: auto;
+}
+
+.unlock-error {
+  margin: 0;
+  color: var(--error);
+}
+
 .editor {
   flex: 1;
   min-height: 50vh;

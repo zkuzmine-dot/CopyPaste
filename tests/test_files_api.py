@@ -7,7 +7,7 @@ from sqlalchemy import func, select, update
 
 from app.db.models.file import StoredFile
 from app.main import app
-from app.realtime.rate_limit import KeyedRateLimiter
+from app.security.upload_limit import UploadRateLimiter
 from app.settings import settings
 from app.utils import signing
 
@@ -133,8 +133,8 @@ def test_too_large_without_content_length(client, db, file_storage, monkeypatch)
     assert files_on_disk(file_storage) == []
 
 
-def test_upload_rate_limit(client):
-    app.state.upload_rate_limiter = KeyedRateLimiter(rate=0.001, burst=2)
+def test_upload_rate_limit(client, redis_client):
+    app.state.upload_rate_limiter = UploadRateLimiter(redis_client, rate=0.001, burst=2)
 
     assert [upload(client).status_code for _ in range(3)] == [201, 201, 429]
 

@@ -161,6 +161,43 @@ async def test_cancelled_save_leaves_nothing(file_storage):
     assert part_files(file_storage) == []
 
 
+# --- синхронная запись и чтение ---
+
+
+def test_write_and_open(file_storage):
+    key = new_storage_key()
+
+    file_storage.write(key, iter([b"first ", b"second"]))
+
+    with file_storage.open(key) as file:
+        assert file.read() == b"first second"
+    assert part_files(file_storage) == []
+
+
+def test_broken_write_leaves_nothing(file_storage):
+    key = new_storage_key()
+
+    def broken_chunks():
+        yield b"partial"
+        raise OSError("disk error")
+
+    with pytest.raises(OSError, match="disk error"):
+        file_storage.write(key, broken_chunks())
+
+    assert not file_storage.path(key).exists()
+    assert part_files(file_storage) == []
+
+
+def test_open_missing_key(file_storage):
+    with pytest.raises(FileNotFoundError):
+        file_storage.open(new_storage_key())
+
+
+def test_open_rejects_invalid_key(file_storage):
+    with pytest.raises(InvalidStorageKeyError):
+        file_storage.open("../../etc/passwd")
+
+
 # --- удаление ---
 
 

@@ -46,8 +46,8 @@ def test_one_file_goes_to_only_one_of_two_notes(factory, monkeypatch):
     # Вторая ждёт, перепроверяет «файл свободен» и получает отказ
     original_attach = files_service.attach_to_note
 
-    def slow_attach(db, note_id, public_ids):
-        original_attach(db, note_id, public_ids)
+    def slow_attach(db, note_id, public_ids, encrypted=None):
+        original_attach(db, note_id, public_ids, encrypted)
         time.sleep(RACE_WINDOW)
 
     monkeypatch.setattr(files_service, "attach_to_note", slow_attach)

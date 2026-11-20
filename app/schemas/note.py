@@ -7,6 +7,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     field_validator,
     model_validator,
 )
@@ -30,6 +31,15 @@ ExpiresAt = Annotated[AwareDatetime, AfterValidator(_must_be_future)]
 
 
 FileId = Annotated[str, Field(min_length=1, max_length=64)]
+# SecretStr: пароль не попадёт в repr и логи. Длина ограничена и при вводе: слишком длинный
+# пароль — это лишняя работа Argon2, а слишком короткий всё равно не может быть верным
+Password = Annotated[
+    SecretStr,
+    Field(
+        min_length=settings.NOTE_PASSWORD_MIN_LENGTH,
+        max_length=settings.NOTE_PASSWORD_MAX_LENGTH,
+    ),
+]
 
 
 class NoteCreate(BaseModel):
@@ -37,6 +47,7 @@ class NoteCreate(BaseModel):
     file_ids: Annotated[list[FileId], Field(max_length=settings.NOTE_MAX_FILES)] = []
     expires_at: ExpiresAt | None = None
     burn_after_read: bool = False
+    password: Password | None = None
 
     @model_validator(mode="after")
     def text_or_files(self) -> Self:
@@ -60,14 +71,20 @@ class NoteUpdate(BaseModel):
         return value
 
 
+class NotePassword(BaseModel):
+    password: Password
+
+
 class NoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     slug: str
-    # None у непрочитанной одноразовой заметки: текст отдаёт только POST /{slug}/read
+    # None у непрочитанной одноразовой заметки и у заметки с паролем:
+    # текст отдают только POST /{slug}/read и POST /{slug}/unlock
     text: str | None
     created_at: datetime
     updated_at: datetime
     expires_at: datetime | None
     burn_after_read: bool
+    has_password: bool
     files: list[LinkedFileRead]

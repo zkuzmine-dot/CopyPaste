@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -6,6 +8,7 @@ from sqlalchemy import create_engine, make_url, text
 from sqlalchemy.orm import sessionmaker
 
 from app.api.files.routes import create_upload_rate_limiter
+from app.db.redis import create_redis
 from app.main import app
 from app.settings import settings
 from app.storage.local import LocalFileStorage
@@ -13,6 +16,9 @@ from app.storage.local import LocalFileStorage
 TEST_DATABASE_URL = make_url(settings.DATABASE_URL).set(
     database=f"{make_url(settings.DATABASE_URL).database}_test"
 )
+# Отдельная логическая база Redis: тесты не трогают счётчики и заморозки приложения
+TEST_REDIS_DB = 15
+TEST_REDIS_URL = urlsplit(settings.REDIS_URL)._replace(path=f"/{TEST_REDIS_DB}").geturl()
 
 
 def _recreate_test_database() -> None:
@@ -68,13 +74,24 @@ def file_storage(tmp_path) -> LocalFileStorage:
 
 
 @pytest.fixture
-def client(session_factory, file_storage):
+def redis_client():
+    client = create_redis(TEST_REDIS_URL)
+    client.flushdb()
+    yield client
+    client.flushdb()
+    client.close()
+
+
+@pytest.fixture
+def client(session_factory, file_storage, redis_client):
     # Настоящий get_db берёт фабрику из app.state — подкладываем тестовую.
     # lifespan не запускаем (TestClient без with), поэтому выставляем руками
     app.state.session_factory = session_factory
     app.state.file_storage = file_storage
-    app.state.upload_rate_limiter = create_upload_rate_limiter()
+    app.state.upload_rate_limiter = create_upload_rate_limiter(redis_client)
+    app.state.redis = redis_client
     yield TestClient(app)
     del app.state.session_factory
     del app.state.file_storage
     del app.state.upload_rate_limiter
+    del app.state.redis
