@@ -60,6 +60,24 @@
         <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
       </section>
 
+      <section id="unlock" class="burn-confirm" hidden>
+        <h2 class="burn-confirm-title">Заметка защищена паролем</h2>
+        <p id="unlock-info" class="burn-confirm-text" hidden></p>
+        <form id="unlock-form" class="unlock-form">
+          <input
+            id="unlock-password"
+            class="password-input"
+            type="password"
+            placeholder="Пароль"
+            autocomplete="current-password"
+            maxlength="128"
+            required
+          >
+          <button id="unlock-submit" class="button primary" type="submit">Открыть</button>
+        </form>
+        <p id="unlock-error" class="unlock-error" role="alert" hidden></p>
+      </section>
+
       <div id="editor-area" class="editor-area">
         <textarea
           id="text"
@@ -74,6 +92,9 @@
           <span id="counter" class="counter">0 / 100 000</span>
         </div>
 
+        <p id="password-hint" class="files-hint" hidden>
+          Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
+        </p>
         <p id="note-files-hint" class="files-hint" hidden></p>
         <ul id="note-files" class="file-list" hidden></ul>
         <ul id="attachment-list" class="upload-list"></ul>
@@ -95,6 +116,18 @@
               <input id="burn" type="checkbox">
               <span>Удалить после прочтения</span>
             </label>
+
+            <div class="password-field">
+              <input
+                id="note-password"
+                class="password-input"
+                type="password"
+                placeholder="Пароль (необязательно)"
+                autocomplete="new-password"
+                maxlength="128"
+              >
+              <button id="toggle-password" class="button small" type="button">Показать</button>
+            </div>
           </div>
 
           <div class="buttons">
