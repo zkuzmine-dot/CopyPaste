@@ -1,14 +1,17 @@
 from typing import Self
 
+import httpx2
+import pytest
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.errors import HIDDEN, validation_error_without_secrets
 from app.main import app as main_app
 
 PASSWORD = "s3cret-pass"
+
+pytestmark = pytest.mark.anyio
 
 
 class Body(BaseModel):
@@ -31,11 +34,15 @@ def endpoint(body: Body) -> dict:
     return {}
 
 
-client = TestClient(demo)
+@pytest.fixture
+async def client():
+    transport = httpx2.ASGITransport(app=demo)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
-def test_password_field_error_hides_value():
-    response = client.post("/demo", json={"name": "alice", "password": "abc"})
+async def test_password_field_error_hides_value(client):
+    response = await client.post("/demo", json={"name": "alice", "password": "abc"})
 
     assert response.status_code == 422
     [error] = response.json()["detail"]
@@ -44,9 +51,9 @@ def test_password_field_error_hides_value():
     assert "abc" not in response.text
 
 
-def test_model_error_hides_password_inside_body():
+async def test_model_error_hides_password_inside_body(client):
     # Ошибка валидатора модели кладёт в input всё тело — вместе с паролем
-    response = client.post("/demo", json={"name": "forbidden", "password": PASSWORD})
+    response = await client.post("/demo", json={"name": "forbidden", "password": PASSWORD})
 
     assert response.status_code == 422
     [error] = response.json()["detail"]
@@ -54,12 +61,12 @@ def test_model_error_hides_password_inside_body():
     assert PASSWORD not in response.text
 
 
-def test_other_fields_keep_input():
-    response = client.post("/demo", json={"name": "ab"})
+async def test_other_fields_keep_input(client):
+    response = await client.post("/demo", json={"name": "ab"})
 
     [error] = response.json()["detail"]
     assert error["input"] == "ab"
 
 
-def test_main_app_uses_handler():
+async def test_main_app_uses_handler():
     assert main_app.exception_handlers[RequestValidationError] is validation_error_without_secrets

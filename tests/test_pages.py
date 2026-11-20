@@ -1,18 +1,11 @@
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
-
-
-@pytest.fixture
-def page_client() -> TestClient:
-    # Страницам БД не нужна, поэтому без фикстуры client
-    return TestClient(app)
+pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("path", ["/", "/note", "/n/a5z573fs", "/c/a5z573fs"])
-def test_page_returns_html(page_client, path):
-    response = page_client.get(path)
+async def test_page_returns_html(async_client, path):
+    response = await async_client.get(path)
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
@@ -31,15 +24,15 @@ def test_page_returns_html(page_client, path):
         ("/static/style.css", "text/css"),
     ],
 )
-def test_static_files(page_client, path, content_type):
-    response = page_client.get(path)
+async def test_static_files(async_client, path, content_type):
+    response = await async_client.get(path)
 
     assert response.status_code == 200
     assert content_type in response.headers["content-type"]
 
 
-def test_pages_not_in_openapi(page_client):
-    paths = page_client.get("/openapi.json").json()["paths"]
+async def test_pages_not_in_openapi(async_client):
+    paths = (await async_client.get("/openapi.json")).json()["paths"]
 
     assert "/" not in paths
     assert "/note" not in paths

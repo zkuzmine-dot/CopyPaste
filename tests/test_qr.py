@@ -8,10 +8,12 @@ from app.utils.qr import make_qr_svg
 
 URL = "/api/notes"
 
+pytestmark = pytest.mark.anyio
+
 
 @pytest.fixture
-def slug(client) -> str:
-    return client.post(URL, json={"text": "hello"}).json()["slug"]
+async def slug(async_client) -> str:
+    return (await async_client.post(URL, json={"text": "hello"})).json()["slug"]
 
 
 def test_make_qr_svg():
@@ -23,26 +25,26 @@ def test_make_qr_svg():
     assert svg.rstrip().endswith("</svg>")
 
 
-def test_note_qr(client, slug):
-    response = client.get(f"{URL}/{slug}/qr")
+async def test_note_qr(async_client, slug):
+    response = await async_client.get(f"{URL}/{slug}/qr")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/svg+xml"
     # QR детерминирован: тот же текст даёт тот же SVG — так проверяем, что внутри верная ссылка
-    assert response.text == make_qr_svg(f"http://testserver/n/{slug}")
+    assert response.text == make_qr_svg(f"http://test/n/{slug}")
 
 
-def test_note_qr_unknown_slug(client):
-    response = client.get(f"{URL}/zzzzzzzz/qr")
+async def test_note_qr_unknown_slug(async_client):
+    response = await async_client.get(f"{URL}/zzzzzzzz/qr")
 
     assert response.status_code == 404
 
 
-def test_note_qr_expired(client, connection, slug):
+async def test_note_qr_expired(async_client, connection, slug):
     connection.execute(
         update(Note).where(Note.slug == slug).values(expires_at=func.now() - timedelta(seconds=1))
     )
 
-    response = client.get(f"{URL}/{slug}/qr")
+    response = await async_client.get(f"{URL}/{slug}/qr")
 
     assert response.status_code == 404
