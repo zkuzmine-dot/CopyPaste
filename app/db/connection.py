@@ -3,6 +3,12 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.concurrency import run_in_threadpool
 
@@ -20,6 +26,23 @@ def create_db_engine() -> Engine:
 
 def create_session_factory(engine: Engine) -> sessionmaker:
     return sessionmaker(bind=engine)
+
+
+def create_async_db_engine() -> AsyncEngine:
+    # Тот же DATABASE_URL: psycopg 3 работает и синхронно, и асинхронно —
+    # create_async_engine сам выбирает асинхронный вариант драйвера
+    return create_async_engine(
+        settings.DATABASE_URL,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_pre_ping=settings.DB_POOL_PRE_PING,
+    )
+
+
+def create_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    # expire_on_commit=False: после коммита атрибуты не протухают. В async их догрузка была бы
+    # скрытым запросом и упала бы с MissingGreenlet
+    return async_sessionmaker(engine, expire_on_commit=False)
 
 
 def get_db(request: Request) -> Iterator[Session]:

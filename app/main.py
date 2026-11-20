@@ -12,7 +12,12 @@ from app.api.errors import validation_error_without_secrets
 from app.api.files.routes import create_upload_rate_limiter
 from app.api.files.routes import router as files_router
 from app.api.notes.routes import router as notes_router
-from app.db.connection import create_db_engine, create_session_factory
+from app.db.connection import (
+    create_async_db_engine,
+    create_async_session_factory,
+    create_db_engine,
+    create_session_factory,
+)
 from app.db.redis import create_redis
 from app.pages import STATIC_DIR
 from app.pages import router as pages_router
@@ -26,6 +31,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = create_db_engine()
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
+    # Пока рядом с синхронным: код переходит на него по этапам. Соединения берутся лениво
+    async_engine = create_async_db_engine()
+    app.state.async_session_factory = create_async_session_factory(async_engine)
     app.state.channel_manager = ChannelManager()
     app.state.file_storage = LocalFileStorage(settings.FILES_DIR)
     # Соединение откроется при первой команде: без Redis приложение стартует,
@@ -34,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.upload_rate_limiter = create_upload_rate_limiter(app.state.redis)
     yield
     app.state.redis.close()
+    await async_engine.dispose()
     engine.dispose()
 
 
