@@ -1,9 +1,9 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import cast
 
-from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, case, delete, exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.channel import Channel, Message
@@ -23,6 +23,15 @@ class DeletedFile:
     storage_key: str
     message_id: int | None
     channel_slug: str | None
+
+
+@dataclass(frozen=True)
+class EncryptedUpload:
+    """Зашифрованная копия загрузки для заметки с паролем."""
+
+    storage_key: str
+    nonce: bytes
+    chunk_size: int
 
 
 def _owner_is_alive() -> ColumnElement[bool]:
@@ -94,7 +103,37 @@ def get_available_file(db: Session, public_id: str) -> StoredFile | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
-def attach_to_note(db: Session, note_id: int, public_ids: Sequence[str]) -> None:
+def _is_free_note_upload(public_ids: Sequence[str]) -> ColumnElement[bool]:
+    return and_(
+        StoredFile.public_id.in_(public_ids),
+        StoredFile.origin == FileOrigin.NOTE,
+        StoredFile.note_id.is_(None),
+        StoredFile.message_id.is_(None),
+        StoredFile.keep_until > func.now(),
+    )
+
+
+def pending_uploads(db: Session, public_ids: Sequence[str]) -> dict[str, str]:
+    """Ключи хранилища загрузок, которые можно привязать к заметке, — чтобы их зашифровать.
+
+    Это только предварительная проверка: окончательная — в attach_to_note.
+    """
+    stmt = select(StoredFile.public_id, StoredFile.storage_key).where(
+        _is_free_note_upload(public_ids)
+    )
+    keys = {public_id: key for public_id, key in db.execute(stmt)}
+    if len(keys) != len(public_ids):
+        raise FilesNotAvailableError
+    return keys
+
+
+def attach_to_note(
+    db: Session,
+    note_id: int,
+    public_ids: Sequence[str],
+    encrypted: Mapping[str, EncryptedUpload] | None = None,
+) -> None:
+    """encrypted — копии для заметки с паролем: строка переходит на них в той же транзакции."""
     if not public_ids:
         return
     positions = {public_id: i for i, public_id in enumerate(public_ids)}
@@ -102,23 +141,40 @@ def attach_to_note(db: Session, note_id: int, public_ids: Sequence[str]) -> None
     # второй дождётся блокировки строки, перепроверит условия и файл уже не получит
     stmt = (
         update(StoredFile)
-        .where(
-            StoredFile.public_id.in_(public_ids),
-            StoredFile.origin == FileOrigin.NOTE,
-            StoredFile.note_id.is_(None),
-            StoredFile.message_id.is_(None),
-            StoredFile.keep_until > func.now(),
-        )
+        .where(_is_free_note_upload(public_ids))
         .values(
             note_id=note_id,
             keep_until=None,
             position=case(positions, value=StoredFile.public_id),
         )
-        .returning(StoredFile.id)
-        .execution_options(synchronize_session=False)
     )
-    if len(db.scalars(stmt).all()) != len(public_ids):
+    if encrypted is not None:
+        assert set(encrypted) == set(public_ids)
+        items = encrypted.items()
+        stmt = stmt.values(
+            storage_key=case(
+                {public_id: upload.storage_key for public_id, upload in items},
+                value=StoredFile.public_id,
+            ),
+            encryption_nonce=case(
+                {public_id: upload.nonce for public_id, upload in items},
+                value=StoredFile.public_id,
+            ),
+            chunk_size=case(
+                {public_id: upload.chunk_size for public_id, upload in items},
+                value=StoredFile.public_id,
+            ),
+        )
+    attached = stmt.returning(StoredFile.id).execution_options(synchronize_session=False)
+    if len(db.scalars(attached).all()) != len(public_ids):
         raise FilesNotAvailableError
+
+
+def has_encrypted_files(db: Session, note_id: int) -> bool:
+    stmt = select(
+        exists().where(StoredFile.note_id == note_id, StoredFile.encryption_nonce.is_not(None))
+    )
+    return bool(db.scalar(stmt))
 
 
 def files_of_note(db: Session, note_id: int) -> Sequence[StoredFile]:

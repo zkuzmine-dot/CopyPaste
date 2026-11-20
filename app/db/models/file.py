@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
     SmallInteger,
     String,
     false,
@@ -40,6 +41,10 @@ class StoredFile(Base):
             "keep_until",
             postgresql_where=sql_text("note_id IS NULL AND message_id IS NULL"),
         ),
+        CheckConstraint(
+            "num_nulls(encryption_nonce, chunk_size) IN (0, 2)",
+            name="ck_stored_files_encryption_complete",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -65,3 +70,6 @@ class StoredFile(Base):
     )
     keep_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delete_after_download: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Только у файлов заметок с паролем: байты на диске зашифрованы ключом заметки
+    encryption_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    chunk_size: Mapped[int | None]

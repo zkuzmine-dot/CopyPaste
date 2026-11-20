@@ -1,3 +1,5 @@
+import io
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -39,7 +41,7 @@ def flip(data: bytes, index: int) -> bytes:
 def test_roundtrip(text):
     encrypted = encrypt_note(PASSWORD, text, SLUG)
 
-    assert unlock_note(PASSWORD, encrypted, SLUG) == text
+    assert unlock_note(PASSWORD, encrypted, SLUG).text == text
 
 
 def test_ciphertext_does_not_contain_text():
@@ -137,7 +139,7 @@ def test_password_unicode_forms_are_equal():
     decomposed = "пароль-й"  # «и» + кратка
     encrypted = encrypt_note(composed, TEXT, SLUG)
 
-    assert unlock_note(decomposed, encrypted, SLUG) == TEXT
+    assert unlock_note(decomposed, encrypted, SLUG).text == TEXT
 
 
 def test_stored_params_are_used(monkeypatch):
@@ -148,7 +150,7 @@ def test_stored_params_are_used(monkeypatch):
 
     assert encrypted.kdf.time_cost == 1
     assert encrypted.kdf.memory_kib == 1024
-    assert unlock_note(PASSWORD, encrypted, SLUG) == TEXT
+    assert unlock_note(PASSWORD, encrypted, SLUG).text == TEXT
 
 
 def test_derive_key():
@@ -172,7 +174,7 @@ def test_default_params_work(monkeypatch):
         65_536,
         4,
     )
-    assert unlock_note(PASSWORD, encrypted, SLUG) == TEXT
+    assert unlock_note(PASSWORD, encrypted, SLUG).text == TEXT
 
 
 # --- предел одновременных вычислений ---
@@ -201,3 +203,119 @@ def test_concurrent_kdf_is_limited(monkeypatch):
         list(pool.map(lambda _: derive_key(PASSWORD, params), range(6)))
 
     assert max_active == 2
+
+
+def test_unlock_returns_key_of_the_note():
+    key = crypto.new_note_key()
+    encrypted = encrypt_note(PASSWORD, TEXT, SLUG, key)
+
+    assert unlock_note(PASSWORD, encrypted, SLUG).key == key
+
+
+# --- файлы кусками ---
+
+CHUNK = 16
+FILE_ID = "Ab3dEf6hIj9kLm2nOp5qRs"
+
+
+def file_cipher(**changes) -> crypto.FileCipher:
+    cipher = crypto.FileCipher(
+        key=b"k" * crypto.KEY_BYTES,
+        nonce=b"n" * crypto.FILE_NONCE_BYTES,
+        file_id=FILE_ID,
+        chunk_size=CHUNK,
+    )
+    return replace(cipher, **changes)
+
+
+def encrypted_file(cipher: crypto.FileCipher, plain: bytes) -> bytes:
+    return b"".join(crypto.encrypt_file(cipher, io.BytesIO(plain)))
+
+
+def decrypted_file(cipher: crypto.FileCipher, stored: bytes, first: int = 0) -> bytes:
+    chunks = crypto.decrypt_file(cipher, io.BytesIO(stored), len(stored), first=first)
+    return b"".join(chunks)
+
+
+@pytest.mark.parametrize("size", [0, 1, CHUNK - 1, CHUNK, CHUNK + 1, 3 * CHUNK, 3 * CHUNK + 5])
+def test_file_roundtrip(size):
+    cipher = file_cipher()
+    plain = bytes(i % 251 for i in range(size))
+
+    stored = encrypted_file(cipher, plain)
+
+    # Каждый кусок — плюс тег; даже у пустого файла есть один кусок с признаком «последний»
+    assert len(stored) == size + max(1, math.ceil(size / CHUNK)) * crypto.TAG_BYTES
+    assert crypto.plain_size(len(stored), cipher) == size
+    assert decrypted_file(cipher, stored) == plain
+
+
+def test_file_ciphertext_does_not_contain_plaintext():
+    plain = b"secret file bytes" * 20
+
+    assert b"secret file" not in encrypted_file(file_cipher(), plain)
+
+
+def test_chunks_decrypt_without_reading_previous_ones():
+    cipher = file_cipher()
+    plain = bytes(range(100))
+    stored = encrypted_file(cipher, plain)
+
+    # Range с середины: первые два куска не читаются вовсе
+    assert decrypted_file(cipher, stored, first=2) == plain[2 * CHUNK :]
+
+
+STORED_CHUNK = CHUNK + crypto.TAG_BYTES
+
+
+def swap_chunks(stored: bytes) -> bytes:
+    first, second = stored[:STORED_CHUNK], stored[STORED_CHUNK : 2 * STORED_CHUNK]
+    return second + first + stored[2 * STORED_CHUNK :]
+
+
+def chunk_from_other_file(stored: bytes) -> bytes:
+    # Тот же ключ заметки, но другой файл: кусок с тем же номером подложить нельзя
+    other = encrypted_file(file_cipher(nonce=b"m" * 8, file_id="other-file-id"), bytes(64))
+    return (
+        stored[:STORED_CHUNK] + other[STORED_CHUNK : 2 * STORED_CHUNK] + stored[2 * STORED_CHUNK :]
+    )
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        lambda stored: flip(stored, STORED_CHUNK + 3),
+        swap_chunks,
+        chunk_from_other_file,
+        # Ровно по границе куска: каждый оставшийся кусок цел, выдаёт обрезку только признак
+        lambda stored: stored[: 2 * STORED_CHUNK],
+        lambda stored: stored[:-1],
+        lambda stored: stored + stored[-STORED_CHUNK:],
+    ],
+    ids=["flipped_byte", "swapped", "foreign_chunk", "cut_at_boundary", "cut_inside", "appended"],
+)
+def test_damaged_file_is_detected(damage):
+    cipher = file_cipher()
+    stored = encrypted_file(cipher, bytes(range(64)))
+
+    with pytest.raises(DecryptionError):
+        decrypted_file(cipher, damage(stored))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"key": b"x" * crypto.KEY_BYTES}, {"nonce": b"x" * 8}, {"file_id": "other-file-id"}],
+    ids=["other_key", "other_nonce", "other_file"],
+)
+def test_file_needs_its_own_key_nonce_and_id(changes):
+    stored = encrypted_file(file_cipher(), bytes(40))
+
+    with pytest.raises(DecryptionError):
+        decrypted_file(file_cipher(**changes), stored)
+
+
+@pytest.mark.parametrize("stored_size", [0, crypto.TAG_BYTES - 1, STORED_CHUNK + 3])
+def test_impossible_stored_size(stored_size):
+    # Последний кусок короче тега — такого файла шифрование не создаёт
+    with pytest.raises(DecryptionError):
+        crypto.plain_size(stored_size, file_cipher())

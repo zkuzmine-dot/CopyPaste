@@ -1,8 +1,8 @@
 import re
 import secrets
-from collections.abc import AsyncIterable, Iterator, Mapping
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping
 from datetime import timedelta
-from typing import Protocol
+from typing import BinaryIO, Protocol
 
 from starlette.responses import Response
 
@@ -41,6 +41,14 @@ class FileStorage(Protocol):
         headers: Mapping[str, str],
     ) -> Response:
         """Ответ с файлом, с поддержкой докачки. FileNotFoundError, если байтов нет."""
+        ...
+
+    def open(self, key: str) -> BinaryIO:
+        """Файл для чтения. FileNotFoundError, если байтов нет."""
+        ...
+
+    def write(self, key: str, chunks: Iterable[bytes]) -> None:
+        """Как save, но синхронно и без предела размера: для файлов, уже прошедших проверки."""
         ...
 
     def delete(self, key: str) -> None: ...

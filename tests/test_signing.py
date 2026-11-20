@@ -64,3 +64,25 @@ def test_signature_depends_on_secret(monkeypatch):
     monkeypatch.setattr(settings, "FILES_SIGNING_SECRET", SecretStr("another-secret-" * 3))
 
     assert not signing.is_valid_signature("abc", EXPIRES, False, query["sig"], now=NOW)
+
+
+def test_key_id_is_signed():
+    path, query = parse(signing.file_url("abc", EXPIRES, key_id="key-1"))
+
+    assert path == "/api/files/abc"
+    assert query["key_id"] == "key-1"
+    assert signing.is_valid_signature("abc", EXPIRES, False, query["sig"], key_id="key-1", now=NOW)
+    # Запись с ключом подменить нельзя, и выбросить её из ссылки тоже
+    for other in ("key-2", None):
+        assert not signing.is_valid_signature(
+            "abc", EXPIRES, False, query["sig"], key_id=other, now=NOW
+        )
+
+
+def test_received_url_is_signed_without_key_id():
+    _, download = parse(signing.file_url("abc", EXPIRES, key_id="key-1"))
+    _, received = parse(signing.received_url("abc", EXPIRES))
+
+    assert "key_id" not in received
+    assert received["sig"] != download["sig"]
+    assert signing.is_valid_signature("abc", EXPIRES, False, received["sig"], now=NOW)

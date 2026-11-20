@@ -31,7 +31,7 @@ def test_two_correct_passwords_open_burn_note_once(factory):
         note = notes_service.create_note(
             db, NoteCreate(text="secret", password="correct horse", burn_after_read=True)
         )
-        protected = notes_service.protected_of(note)
+        protected = notes_service.protected_of(db, note)
     assert protected is not None
 
     first = factory()

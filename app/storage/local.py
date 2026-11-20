@@ -1,8 +1,9 @@
 import secrets
 import time
-from collections.abc import AsyncIterable, Iterator, Mapping
+from collections.abc import AsyncIterable, Iterable, Iterator, Mapping
 from datetime import timedelta
 from pathlib import Path
+from typing import BinaryIO
 
 import anyio
 from starlette.responses import FileResponse, Response
@@ -63,6 +64,23 @@ class LocalFileStorage:
         if not path.is_file():
             raise FileNotFoundError(key)
         return FileResponse(path, media_type=media_type, headers=headers)
+
+    def open(self, key: str) -> BinaryIO:
+        return self.path(key).open("rb")
+
+    def write(self, key: str, chunks: Iterable[bytes]) -> None:
+        target = self.path(key)
+        self._tmp.mkdir(parents=True, exist_ok=True)
+        part = self._tmp / f"{secrets.token_hex(16)}.part"
+        try:
+            with part.open("wb") as file:
+                for chunk in chunks:
+                    file.write(chunk)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            part.replace(target)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
 
     def delete(self, key: str) -> None:
         self.path(key).unlink(missing_ok=True)

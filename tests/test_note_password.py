@@ -229,8 +229,8 @@ def test_frozen_check_happens_before_argon2(client, limits, monkeypatch):
     note = protected(client)
     unlock(client, note["slug"], "wrong-password")
     calls = []
-    original = crypto.unlock_note
-    monkeypatch.setattr(crypto, "unlock_note", lambda *args: calls.append(args) or original(*args))
+    original = crypto.derive_key
+    monkeypatch.setattr(crypto, "derive_key", lambda *args: calls.append(args) or original(*args))
 
     assert unlock(client, note["slug"]).status_code == 429
     # Замороженный адрес не должен тратить память и CPU на Argon2

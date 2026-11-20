@@ -11,9 +11,11 @@ from app.db.models.note import Note
 from app.schemas.file import LinkedFileRead
 from app.schemas.note import NoteCreate, NotePassword, NoteRead, NoteUpdate
 from app.security.attempts import AttemptsUnavailableError, PasswordAttempts
+from app.security.file_keys import FileKeys, FileKeysUnavailableError
 from app.services import files as files_service
 from app.services import notes as notes_service
 from app.settings import settings
+from app.storage.base import FileStorage
 from app.utils import crypto
 from app.utils.qr import make_qr_svg
 
@@ -84,19 +86,69 @@ def _present(db: Session, note: Note, *, hide_text: bool) -> NoteRead:
     return _note_read(note, files, text=None if hide_text else note.text)
 
 
-def _opened(result: notes_service.NoteWithFiles, *, text: str, links_ttl: int) -> NoteRead:
+def _opened(
+    result: notes_service.NoteWithFiles,
+    *,
+    text: str,
+    links_ttl: int,
+    file_key: tuple[str, int] | None = None,
+) -> NoteRead:
+    """file_key — запись с ключом файлов в Redis и когда она исчезнет."""
     note = result.note
-    if not note.burn_after_read:
-        links_expire = _links_expire_at(note, links_ttl)
-        files = [LinkedFileRead.build(f, links_expire=links_expire) for f in result.files]
-        return _note_read(note, files, text=text)
+    key_id, key_expires = file_key if file_key is not None else (None, None)
     files = []
     for stored in result.files:
-        # keep_until выставлен в release_for_burn: ссылка живёт ровно столько же, сколько файл
-        assert stored.keep_until is not None
-        expires = int(stored.keep_until.timestamp())
-        files.append(LinkedFileRead.build(stored, links_expire=expires, preview=False))
+        if note.burn_after_read:
+            # keep_until выставлен в release_for_burn: ссылка живёт ровно столько же, сколько файл
+            assert stored.keep_until is not None
+            expires = int(stored.keep_until.timestamp())
+        else:
+            expires = _links_expire_at(note, links_ttl)
+        if key_expires is not None:
+            # Ссылка не должна пережить ключ: без него зашифрованный файл не отдать
+            expires = min(expires, key_expires)
+        files.append(
+            LinkedFileRead.build(
+                stored, links_expire=expires, preview=not note.burn_after_read, key_id=key_id
+            )
+        )
     return _note_read(note, files, text=text)
+
+
+def _delete_quietly(storage: FileStorage, keys: list[str]) -> None:
+    # Не стёрлось — не повод отказывать: строк в БД на эти байты нет, их уберёт сверка диска
+    for key in keys:
+        try:
+            storage.delete(key)
+        except OSError:
+            logger.exception("Failed to delete file %s", key)
+
+
+def _create(request: Request, payload: NoteCreate) -> NoteRead:
+    factory: sessionmaker[Session] = request.app.state.session_factory
+    storage: FileStorage = request.app.state.file_storage
+    # Argon2 и шифрование файлов — до транзакции: соединение с БД на это время не занято
+    prepared = notes_service.prepare_note(payload)
+    uploads: dict[str, str] = {}
+    encrypted = None
+    if prepared.key is not None and payload.file_ids:
+        with factory() as db:
+            uploads = files_service.pending_uploads(db, payload.file_ids)
+        encrypted = notes_service.encrypt_uploads(storage, uploads, prepared.key)
+    try:
+        with factory() as db, db.begin():
+            note = notes_service.create_note(
+                db, payload, prepared=prepared, encrypted_files=encrypted
+            )
+            result = _present(db, note, hide_text=note.has_password)
+    except BaseException:
+        # Транзакция откатилась: строки по-прежнему указывают на исходники, копии не нужны
+        if encrypted:
+            _delete_quietly(storage, [upload.storage_key for upload in encrypted.values()])
+        raise
+    # Открытые исходники — только после коммита: до него строки указывали на них
+    _delete_quietly(storage, list(uploads.values()))
+    return result
 
 
 @router.post(
@@ -105,17 +157,16 @@ def _opened(result: notes_service.NoteWithFiles, *, text: str, links_ttl: int) -
     status_code=status.HTTP_201_CREATED,
     responses={422: {"description": "Invalid body or files are not available"}},
     description="file_ids — id из POST /api/files. Текст можно не присылать, если есть файлы. "
-    "С password текст хранится зашифрованным, и в ответе его нет.",
+    "С password текст и файлы хранятся зашифрованными, и текста в ответе нет.",
 )
-def create_note(payload: NoteCreate, db: DbSession) -> NoteRead:
+def create_note(payload: NoteCreate, request: Request) -> NoteRead:
     try:
-        note = notes_service.create_note(db, payload)
+        return _create(request, payload)
     except files_service.FilesNotAvailableError:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Some files are unknown, already attached or uploaded too long ago",
         ) from None
-    return _present(db, note, hide_text=note.has_password)
 
 
 @router.get(
@@ -151,7 +202,7 @@ def _load_protected(request: Request, slug: str) -> notes_service.ProtectedNote:
         note = notes_service.get_note_by_slug(db, slug)
         if note is None:
             raise_not_found()
-        protected = notes_service.protected_of(note)
+        protected = notes_service.protected_of(db, note)
     if protected is None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Note has no password")
     return protected
@@ -173,8 +224,8 @@ def _freeze_headers(
 
 def _check_password(
     request: Request, protected: notes_service.ProtectedNote, body: NotePassword
-) -> str:
-    """Текст заметки, если пароль верный. Argon2 считается без открытой сессии БД."""
+) -> crypto.OpenedNote:
+    """Текст и ключ заметки, если пароль верный. Argon2 считается без открытой сессии БД."""
     attempts = PasswordAttempts(request.app.state.redis)
     ip = client_ip(request)
     unavailable = HTTPException(
@@ -192,7 +243,7 @@ def _check_password(
             headers={"Retry-After": str(retry_after)},
         )
     try:
-        text = crypto.unlock_note(
+        opened = crypto.unlock_note(
             body.password.get_secret_value(), protected.encrypted, protected.slug
         )
     except crypto.DecryptionError:
@@ -210,7 +261,16 @@ def _check_password(
     except AttemptsUnavailableError:
         # Пароль верный — не повод отказывать; счётчик сам истечёт по окну
         logger.warning("Could not reset password attempts for note %s", protected.slug)
-    return text
+    return opened
+
+
+def _cache_file_key(request: Request, key: bytes) -> tuple[str, int]:
+    try:
+        return FileKeys(request.app.state.redis).put(key)
+    except FileKeysUnavailableError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail="Password check is temporarily unavailable"
+        ) from None
 
 
 @router.post(
@@ -222,7 +282,9 @@ def _check_password(
 )
 def unlock_note(slug: str, body: NotePassword, request: Request, response: Response) -> NoteRead:
     protected = _load_protected(request, slug)
-    text = _check_password(request, protected, body)
+    opened = _check_password(request, protected, body)
+    # До транзакции: одноразовая заметка в ней сгорит, и без ключа её файлы были бы потеряны
+    file_key = _cache_file_key(request, opened.key) if protected.has_encrypted_files else None
     factory: sessionmaker[Session] = request.app.state.session_factory
     with factory() as db, db.begin():
         result = notes_service.open_protected(db, protected)
@@ -230,7 +292,12 @@ def unlock_note(slug: str, body: NotePassword, request: Request, response: Respo
             raise_not_found()
         # Расшифрованный текст не должен оседать в кэше браузера или прокси
         response.headers["Cache-Control"] = "no-store"
-        return _opened(result, text=text, links_ttl=settings.PROTECTED_FILE_URL_TTL_SECONDS)
+        return _opened(
+            result,
+            text=opened.text,
+            links_ttl=settings.PROTECTED_FILE_URL_TTL_SECONDS,
+            file_key=file_key,
+        )
 
 
 @router.post(

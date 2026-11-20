@@ -35,19 +35,31 @@ class LinkedFileRead(FileRead):
     received_url: str | None
 
     @classmethod
-    def build(cls, stored: StoredFile, *, links_expire: int | None, preview: bool = True) -> Self:
+    def build(
+        cls,
+        stored: StoredFile,
+        *,
+        links_expire: int | None,
+        preview: bool = True,
+        key_id: str | None = None,
+    ) -> Self:
+        """key_id — запись с ключом в Redis, без неё зашифрованный файл не расшифровать."""
         info = FileRead.from_stored(stored).model_dump()
         if links_expire is None:
             return cls(**info, download_url=None, preview_url=None, received_url=None)
+        if stored.encryption_nonce is None:
+            key_id = None
         preview_url = None
         if preview and info["is_image"]:
-            preview_url = signing.file_url(stored.public_id, links_expire, inline=True)
+            preview_url = signing.file_url(
+                stored.public_id, links_expire, inline=True, key_id=key_id
+            )
         received_url = None
         if stored.delete_after_download:
             received_url = signing.received_url(stored.public_id, links_expire)
         return cls(
             **info,
-            download_url=signing.file_url(stored.public_id, links_expire),
+            download_url=signing.file_url(stored.public_id, links_expire, key_id=key_id),
             preview_url=preview_url,
             received_url=received_url,
         )
