@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
+from app.api.client import client_ip
 from app.db.connection import run_db
 from app.db.models.file import FileOrigin
 from app.realtime.manager import ChannelManager
@@ -73,7 +74,7 @@ async def receive_upload(
     Сессию БД во время чтения не держим: медленные загрузки иначе заняли бы весь пул.
     """
     limiter: KeyedRateLimiter = request.app.state.upload_rate_limiter
-    if not limiter.allow(request.client.host if request.client else "unknown"):
+    if not limiter.allow(client_ip(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
 
     # Content-Length проверяем до чтения, но не полагаемся на него: его может не быть
