@@ -7,6 +7,7 @@ from sqlalchemy import text as sql
 
 from app.db.redis import create_redis
 from app.main import app
+from app.security.attempts import AttemptsUnavailableError, PasswordAttempts
 from app.settings import settings
 from app.utils import crypto
 
@@ -144,6 +145,52 @@ def test_wrong_password_counts_down_then_freezes(client, limits):
     assert frozen.status_code == 429
     assert 59 <= int(frozen.headers["retry-after"]) <= 60
     assert TEXT not in frozen.text
+
+
+def test_freezing_failure_says_how_long_to_wait(client, limits):
+    limits(NOTE_MAX_FAILURES=2, NOTE_LOCK_SECONDS=60, IP_MAX_FAILURES=100)
+    note = protected(client)
+
+    first = unlock(client, note["slug"], "wrong-password")
+    last = unlock(client, note["slug"], "wrong-password")
+
+    assert "retry-after" not in first.headers
+    # Срок — сразу с ошибкой, включившей заморозку: таймер не ждёт следующей попытки
+    assert last.status_code == 403
+    assert last.json()["detail"]["attempts_left"] == 0
+    assert 59 <= int(last.headers["retry-after"]) <= 60
+
+
+def test_freezing_failure_reports_longest_freeze(client, limits):
+    # Одна ошибка заморозила и заметку, и IP: ждать до конца более долгой заморозки
+    limits(NOTE_MAX_FAILURES=1, NOTE_LOCK_SECONDS=60, IP_MAX_FAILURES=1, IP_BAN_SECONDS=900)
+    note = protected(client)
+
+    response = unlock(client, note["slug"], "wrong-password")
+
+    assert 899 <= int(response.headers["retry-after"]) <= 900
+
+
+def test_freezing_failure_without_redis_is_still_403(client, limits, monkeypatch):
+    limits(NOTE_MAX_FAILURES=1, IP_MAX_FAILURES=100)
+    note = protected(client)
+    original = PasswordAttempts.retry_after
+    calls = []
+
+    def fails_after_check(self, ip, slug):
+        calls.append(slug)
+        if len(calls) > 1:
+            raise AttemptsUnavailableError
+        return original(self, ip, slug)
+
+    monkeypatch.setattr(PasswordAttempts, "retry_after", fails_after_check)
+
+    response = unlock(client, note["slug"], "wrong-password")
+
+    # Проверка до Argon2 прошла, а срок заморозки узнать не вышло: ответ — всё ещё 403
+    assert len(calls) == 2
+    assert response.status_code == 403
+    assert "retry-after" not in response.headers
 
 
 def test_correct_password_resets_note_counter(client, limits):

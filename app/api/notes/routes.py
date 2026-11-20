@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
 PASSWORD_RESPONSES: dict[int | str, dict] = {
-    403: {"description": "Wrong password; detail.attempts_left — попыток до заморозки"},
+    403: {
+        "description": "Wrong password; detail.attempts_left — попыток до заморозки. "
+        "Если эта ошибка включила заморозку, Retry-After — через сколько секунд"
+    },
     404: {"description": "Note not found"},
     409: {"description": "Note has no password"},
     429: {"description": "Too many wrong passwords; Retry-After — через сколько секунд"},
@@ -154,6 +157,20 @@ def _load_protected(request: Request, slug: str) -> notes_service.ProtectedNote:
     return protected
 
 
+def _freeze_headers(
+    attempts: PasswordAttempts, ip: str, slug: str, attempts_left: int
+) -> dict[str, str] | None:
+    # Эта ошибка и включила заморозку: срок сообщаем сразу, а не на следующей попытке
+    if attempts_left > 0:
+        return None
+    try:
+        retry_after = attempts.retry_after(ip, slug)
+    except AttemptsUnavailableError:
+        # Что пароль неверный, уже известно — без срока ответ всё равно полезен
+        return None
+    return {"Retry-After": str(retry_after)} if retry_after is not None else None
+
+
 def _check_password(
     request: Request, protected: notes_service.ProtectedNote, body: NotePassword
 ) -> str:
@@ -186,6 +203,7 @@ def _check_password(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail={"message": "Wrong password", "attempts_left": attempts_left},
+            headers=_freeze_headers(attempts, ip, protected.slug, attempts_left),
         ) from None
     try:
         attempts.reset_note(protected.slug)

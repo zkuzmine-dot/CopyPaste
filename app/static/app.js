@@ -333,13 +333,14 @@ async function unlockNote(event) {
       showStatus(await errorMessage(response), "error");
       return;
     }
+    // Retry-After приходит с 429 и с той неверной попыткой (403), что включила заморозку
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    if ((response.status === 429 || response.status === 403) && retryAfter > 0) {
+      startUnlockCountdown(retryAfter);
+      return;
+    }
     if (response.status === 429) {
-      const seconds = Number(response.headers.get("Retry-After"));
-      if (seconds > 0) {
-        startUnlockCountdown(seconds);
-      } else {
-        showUnlockError("Слишком много неверных попыток. Попробуйте позже");
-      }
+      showUnlockError("Слишком много неверных попыток. Попробуйте позже");
       return;
     }
     showUnlockError(await unlockFailure(response));
