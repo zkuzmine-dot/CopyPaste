@@ -4,6 +4,7 @@ from typing import Annotated
 
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from redis import Redis
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
@@ -12,10 +13,10 @@ from app.api.client import client_ip
 from app.db.connection import run_db
 from app.db.models.file import FileOrigin
 from app.realtime.manager import ChannelManager
-from app.realtime.rate_limit import KeyedRateLimiter
 from app.schemas.channel_events import FileDownloadedEvent
 from app.schemas.file import FileRead
 from app.security.file_keys import FileKeys, FileKeysUnavailableError
+from app.security.upload_limit import UploadRateLimiter
 from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import FileStorage, FileTooLargeError, new_storage_key
@@ -50,9 +51,9 @@ RAW_FILE_BODY = {
 }
 
 
-def create_upload_rate_limiter() -> KeyedRateLimiter:
-    return KeyedRateLimiter(
-        settings.UPLOAD_RATE_LIMIT_PER_MINUTE / 60, settings.UPLOAD_RATE_LIMIT_BURST
+def create_upload_rate_limiter(redis: Redis) -> UploadRateLimiter:
+    return UploadRateLimiter(
+        redis, settings.UPLOAD_RATE_LIMIT_PER_MINUTE / 60, settings.UPLOAD_RATE_LIMIT_BURST
     )
 
 
@@ -75,8 +76,9 @@ async def receive_upload(
 
     Сессию БД во время чтения не держим: медленные загрузки иначе заняли бы весь пул.
     """
-    limiter: KeyedRateLimiter = request.app.state.upload_rate_limiter
-    if not limiter.allow(client_ip(request)):
+    limiter: UploadRateLimiter = request.app.state.upload_rate_limiter
+    # В пуле потоков: клиент Redis синхронный, а зависший Redis держал бы цикл событий
+    if not await run_in_threadpool(limiter.allow, client_ip(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
 
     # Content-Length проверяем до чтения, но не полагаемся на него: его может не быть

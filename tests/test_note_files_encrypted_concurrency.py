@@ -26,7 +26,7 @@ def real_app(engine, tmp_path, redis_client, monkeypatch):
     storage = LocalFileStorage(tmp_path / "files")
     app.state.session_factory = factory
     app.state.file_storage = storage
-    app.state.upload_rate_limiter = create_upload_rate_limiter()
+    app.state.upload_rate_limiter = create_upload_rate_limiter(redis_client)
     app.state.redis = redis_client
     yield factory, storage
     del app.state.session_factory

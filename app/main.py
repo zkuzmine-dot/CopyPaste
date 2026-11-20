@@ -28,10 +28,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = create_session_factory(engine)
     app.state.channel_manager = ChannelManager()
     app.state.file_storage = LocalFileStorage(settings.FILES_DIR)
-    app.state.upload_rate_limiter = create_upload_rate_limiter()
     # Соединение откроется при первой команде: без Redis приложение стартует,
     # а отказывают только операции, которым он нужен
     app.state.redis = create_redis(settings.REDIS_URL)
+    app.state.upload_rate_limiter = create_upload_rate_limiter(app.state.redis)
     yield
     app.state.redis.close()
     engine.dispose()

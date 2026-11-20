@@ -88,7 +88,7 @@ def client(session_factory, file_storage, redis_client):
     # lifespan не запускаем (TestClient без with), поэтому выставляем руками
     app.state.session_factory = session_factory
     app.state.file_storage = file_storage
-    app.state.upload_rate_limiter = create_upload_rate_limiter()
+    app.state.upload_rate_limiter = create_upload_rate_limiter(redis_client)
     app.state.redis = redis_client
     yield TestClient(app)
     del app.state.session_factory
