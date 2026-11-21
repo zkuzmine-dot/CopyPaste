@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, delete, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.file import StoredFile
 from app.db.models.note import Note
@@ -43,13 +43,20 @@ class PreparedNote:
     key: bytes | None = None
 
 
-def prepare_note(payload: NoteCreate) -> PreparedNote:
+def _prepare(payload: NoteCreate) -> PreparedNote:
     slug = generate_slug()
     if payload.password is None:
         return PreparedNote(slug)
     key = crypto.new_note_key()
     encrypted = crypto.encrypt_note(payload.password.get_secret_value(), payload.text, slug, key)
     return PreparedNote(slug, encrypted, key)
+
+
+async def prepare_note(payload: NoteCreate) -> PreparedNote:
+    # С паролем — в потоке: Argon2 (~0,1 с процессора) не должен останавливать цикл событий
+    if payload.password is None:
+        return _prepare(payload)
+    return await crypto.in_kdf_thread(_prepare, payload)
 
 
 def encrypt_uploads(
@@ -89,8 +96,8 @@ def delete_copies(
         storage.delete(upload.storage_key)
 
 
-def create_note(
-    db: Session,
+async def create_note(
+    db: AsyncSession,
     payload: NoteCreate,
     *,
     prepared: PreparedNote | None = None,
@@ -102,7 +109,7 @@ def create_note(
     открытой транзакции. Без prepared Argon2 считается здесь, до первого запроса к БД.
     """
     if prepared is None:
-        prepared = prepare_note(payload)
+        prepared = await prepare_note(payload)
     note = Note(
         slug=prepared.slug,
         text=payload.text,
@@ -120,46 +127,49 @@ def create_note(
         note.ciphertext = encrypted.ciphertext
     db.add(note)
     # id и created_at приходят из INSERT ... RETURNING, refresh не нужен
-    db.flush()
-    files_service.attach_to_note(db, note.id, payload.file_ids, encrypted_files)
+    await db.flush()
+    # Сервис файлов пока синхронный — через мост run_sync
+    await db.run_sync(files_service.attach_to_note, note.id, payload.file_ids, encrypted_files)
     return note
 
 
-def get_note_by_slug(db: Session, slug: str) -> Note | None:
+async def get_note_by_slug(db: AsyncSession, slug: str) -> Note | None:
     # Протухшие заметки считаем несуществующими
     stmt = select(Note).where(
         Note.slug == slug,
         or_(Note.expires_at.is_(None), Note.expires_at > func.now()),
     )
-    return db.execute(stmt).scalar_one_or_none()
+    return (await db.execute(stmt)).scalar_one_or_none()
 
 
-def _lock_note(db: Session, note_id: int) -> bool:
+async def _lock_note(db: AsyncSession, note_id: int) -> bool:
     stmt = select(Note.id).where(Note.id == note_id).with_for_update()
-    return db.execute(stmt).first() is not None
+    return (await db.execute(stmt)).first() is not None
 
 
-def _open(db: Session, note: Note) -> NoteWithFiles | None:
+async def _open(db: AsyncSession, note: Note) -> NoteWithFiles | None:
     if not note.burn_after_read:
-        return NoteWithFiles(note, files_service.files_of_note(db, note.id))
+        return NoteWithFiles(note, await db.run_sync(files_service.files_of_note, note.id))
     # Сначала блокируем заметку, потом файлы — в том же порядке, что и DELETE заметки
     # (сама строка, потом SET NULL у файлов). Иначе встречные блокировки дали бы deadlock.
     # Второй одновременный читатель дождётся блокировки и строки уже не найдёт
-    if not _lock_note(db, note.id):
+    if not await _lock_note(db, note.id):
         return None
-    files = files_service.release_for_burn(db, note.id)
-    db.execute(delete(Note).where(Note.id == note.id).execution_options(synchronize_session=False))
+    files = await db.run_sync(files_service.release_for_burn, note.id)
+    await db.execute(
+        delete(Note).where(Note.id == note.id).execution_options(synchronize_session=False)
+    )
     return NoteWithFiles(note, files)
 
 
-def read_note(db: Session, slug: str) -> NoteWithFiles | None:
-    note = get_note_by_slug(db, slug)
+async def read_note(db: AsyncSession, slug: str) -> NoteWithFiles | None:
+    note = await get_note_by_slug(db, slug)
     if note is None:
         return None
-    return _open(db, note)
+    return await _open(db, note)
 
 
-def protected_of(db: Session, note: Note) -> ProtectedNote | None:
+async def protected_of(db: AsyncSession, note: Note) -> ProtectedNote | None:
     if not note.has_password:
         return None
     # Колонки заданы все вместе — это гарантирует CHECK ck_notes_encryption_complete
@@ -176,38 +186,39 @@ def protected_of(db: Session, note: Note) -> ProtectedNote | None:
         id=note.id,
         slug=note.slug,
         encrypted=encrypted,
-        has_encrypted_files=files_service.has_encrypted_files(db, note.id),
+        has_encrypted_files=await db.run_sync(files_service.has_encrypted_files, note.id),
     )
 
 
-def open_protected(db: Session, protected: ProtectedNote) -> NoteWithFiles | None:
+async def open_protected(db: AsyncSession, protected: ProtectedNote) -> NoteWithFiles | None:
     """После верного пароля. None — пока считался Argon2, заметку удалили или сожгли."""
-    note = get_note_by_slug(db, protected.slug)
+    note = await get_note_by_slug(db, protected.slug)
     if note is None or note.id != protected.id:
         return None
-    return _open(db, note)
+    return await _open(db, note)
 
 
-def delete_protected(db: Session, protected: ProtectedNote) -> bool:
+async def delete_protected(db: AsyncSession, protected: ProtectedNote) -> bool:
     stmt = delete(Note).where(Note.id == protected.id).execution_options(synchronize_session=False)
-    return cast(CursorResult[Any], db.execute(stmt)).rowcount == 1
+    return cast(CursorResult[Any], await db.execute(stmt)).rowcount == 1
 
 
-def update_note(db: Session, note: Note, payload: NoteUpdate) -> Note:
+async def update_note(db: AsyncSession, note: Note, payload: NoteUpdate) -> Note:
     # exclude_unset: меняем только поля, которые клиент реально прислал
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(note, field, value)
-    db.flush()
-    db.refresh(note)
+    await db.flush()
+    # updated_at выставляет БД (onupdate) — читаем явно, а не скрытой догрузкой
+    await db.refresh(note)
     return note
 
 
-def delete_note(db: Session, note: Note) -> None:
-    db.delete(note)
-    db.flush()
+async def delete_note(db: AsyncSession, note: Note) -> None:
+    await db.delete(note)
+    await db.flush()
 
 
-def delete_expired_notes(db: Session) -> int:
+async def delete_expired_notes(db: AsyncSession) -> int:
     # Один DELETE на все протухшие, без загрузки объектов в сессию
     stmt = (
         delete(Note)
@@ -215,5 +226,5 @@ def delete_expired_notes(db: Session) -> int:
         .execution_options(synchronize_session=False)
     )
     # execute() типизирован как общий Result, а rowcount есть только у CursorResult (DML)
-    result = cast(CursorResult[Any], db.execute(stmt))
+    result = cast(CursorResult[Any], await db.execute(stmt))
     return result.rowcount

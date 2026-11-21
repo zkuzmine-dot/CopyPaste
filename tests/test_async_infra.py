@@ -9,7 +9,7 @@ from sqlalchemy import func, select, text
 from app.api.files import routes as files_routes
 from app.api.notes import routes as notes_routes
 from app.db.models.note import Note
-from app.services import files as files_service
+from app.services import notes as notes_service
 from tests.conftest import ASYNCIO_DEBUG, TEST_DATABASE_URL
 
 pytestmark = pytest.mark.anyio
@@ -39,16 +39,13 @@ async def test_blocking_call_from_app_in_loop_fails(client, monkeypatch):
         await client.get("/api/files/abc", params={"exp": 1, "sig": "x"})
 
 
-async def test_blocking_call_in_bridged_service_fails(client, monkeypatch):
-    # Синхронный сервис через run_sync работает в том же цикле событий, а не в потоке:
-    # блокироваться в нём нельзя. attach_to_note вызывает код сервиса notes — его кадр в стеке
-    original = files_service.attach_to_note
-
-    def slow_attach(*args):
+async def test_blocking_call_in_service_fails(client, monkeypatch):
+    # Сервисы работают в цикле событий, а не в потоке: блокироваться в их коде нельзя
+    def slow_slug() -> str:
         time.sleep(0.01)
-        return original(*args)
+        return "abcd2345"
 
-    monkeypatch.setattr(files_service, "attach_to_note", slow_attach)
+    monkeypatch.setattr(notes_service, "generate_slug", slow_slug)
 
     with pytest.raises(BlockingError, match="sleep"):
         await client.post("/api/notes", json={"text": "hello"})

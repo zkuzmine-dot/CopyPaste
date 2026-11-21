@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 async def run_cleanup(session_factory: async_sessionmaker[AsyncSession]) -> int:
     # begin(): commit при успехе, rollback при ошибке — как get_db, только без FastAPI
     async with session_factory() as db, db.begin():
-        deleted = await db.run_sync(notes_service.delete_expired_notes)
+        deleted = await notes_service.delete_expired_notes(db)
     logger.log(logging.INFO if deleted else logging.DEBUG, "Deleted %d expired notes", deleted)
     return deleted
 

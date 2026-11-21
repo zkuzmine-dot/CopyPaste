@@ -1,10 +1,8 @@
-import threading
-import time
 from datetime import timedelta
 
+import anyio
 import pytest
 from sqlalchemy import func, update
-from sqlalchemy.orm import sessionmaker
 
 from app.db.models.note import Note
 from app.schemas.note import NoteCreate
@@ -80,32 +78,30 @@ async def test_delete_burn_note(client, burn_slug):
     assert (await client.get(f"{URL}/{burn_slug}")).status_code == 404
 
 
-def test_concurrent_reads_only_one_gets_note(engine):
+async def test_concurrent_reads_only_one_gets_note(committing_session_factory):
     # Настоящие транзакции с коммитом: изоляция через откат здесь не подходит,
     # нужны два независимых соединения
-    factory = sessionmaker(bind=engine)
-    with factory.begin() as db:
-        slug = notes_service.create_note(db, NoteCreate(text="secret", burn_after_read=True)).slug
+    factory = committing_session_factory
+    async with factory() as db, db.begin():
+        note = await notes_service.create_note(db, NoteCreate(text="secret", burn_after_read=True))
+        slug = note.slug
 
-    first = factory()
     result: dict = {}
+    finished = anyio.Event()
 
-    def second_reader() -> None:
-        with factory() as db:
-            result["note"] = notes_service.read_note(db, slug)
-            db.commit()
+    async def second_reader() -> None:
+        async with factory() as db:
+            result["note"] = await notes_service.read_note(db, slug)
+            await db.commit()
+        finished.set()
 
-    try:
-        assert notes_service.read_note(first, slug) is not None  # удалил, но ещё не закоммитил
+    async with factory() as first, anyio.create_task_group() as group:
+        assert await notes_service.read_note(first, slug) is not None  # удалил, но не закоммитил
 
-        thread = threading.Thread(target=second_reader)
-        thread.start()
-        time.sleep(0.5)
-        assert thread.is_alive(), "второй читатель должен ждать блокировку строки"
+        group.start_soon(second_reader)
+        await anyio.sleep(0.5)
+        assert not finished.is_set(), "второй читатель должен ждать блокировку строки"
 
-        first.commit()
-        thread.join(timeout=5)
-    finally:
-        first.close()
+        await first.commit()
 
     assert result["note"] is None

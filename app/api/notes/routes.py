@@ -42,7 +42,7 @@ def raise_not_found() -> NoReturn:
 
 
 async def get_note_or_404(db: AsyncSession, slug: str) -> Note:
-    note = await db.run_sync(notes_service.get_note_by_slug, slug)
+    note = await notes_service.get_note_by_slug(db, slug)
     if note is None:
         raise_not_found()
     return note
@@ -131,10 +131,7 @@ async def _create(request: Request, payload: NoteCreate) -> NoteRead:
     storage: FileStorage = request.app.state.file_storage
     # Argon2 и шифрование файлов — в потоках и до транзакции: на это время не заняты ни
     # цикл событий, ни соединение с БД
-    if payload.password is None:
-        prepared = notes_service.prepare_note(payload)
-    else:
-        prepared = await crypto.in_kdf_thread(notes_service.prepare_note, payload)
+    prepared = await notes_service.prepare_note(payload)
     uploads: dict[str, str] = {}
     encrypted = None
     if prepared.key is not None and payload.file_ids:
@@ -150,11 +147,8 @@ async def _create(request: Request, payload: NoteCreate) -> NoteRead:
         try:
             async with factory() as db:
                 async with db.begin():
-                    note = await db.run_sync(
-                        notes_service.create_note,
-                        payload,
-                        prepared=prepared,
-                        encrypted_files=encrypted,
+                    note = await notes_service.create_note(
+                        db, payload, prepared=prepared, encrypted_files=encrypted
                     )
                     result = await _present(db, note, hide_text=note.has_password)
                 committed = True
@@ -209,7 +203,7 @@ async def get_note(slug: str, db: DbSession) -> NoteRead:
 async def read_note(slug: str, db: DbSession) -> NoteRead:
     # Проверка до чтения: одноразовую заметку с паролем read сжёг бы, не спросив пароль
     _reject_if_protected(await get_note_or_404(db, slug), "POST /{slug}/unlock")
-    result = await db.run_sync(notes_service.read_note, slug)
+    result = await notes_service.read_note(db, slug)
     if result is None:
         raise_not_found()
     return _opened(result, text=result.note.text, links_ttl=settings.FILE_URL_TTL_SECONDS)
@@ -218,10 +212,10 @@ async def read_note(slug: str, db: DbSession) -> NoteRead:
 async def _load_protected(request: Request, slug: str) -> notes_service.ProtectedNote:
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     async with factory() as db:
-        note = await db.run_sync(notes_service.get_note_by_slug, slug)
+        note = await notes_service.get_note_by_slug(db, slug)
         if note is None:
             raise_not_found()
-        protected = await db.run_sync(notes_service.protected_of, note)
+        protected = await notes_service.protected_of(db, note)
     if protected is None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Note has no password")
     return protected
@@ -319,7 +313,7 @@ async def unlock_note(
         file_key = await _cache_file_key(request, opened.key)
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     async with factory() as db, db.begin():
-        result = await db.run_sync(notes_service.open_protected, protected)
+        result = await notes_service.open_protected(db, protected)
     if result is None:
         raise_not_found()
     # Расшифрованный текст не должен оседать в кэше браузера или прокси
@@ -343,7 +337,7 @@ async def delete_protected_note(slug: str, body: NotePassword, request: Request)
     await _check_password(request, protected, body)
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     async with factory() as db, db.begin():
-        deleted = await db.run_sync(notes_service.delete_protected, protected)
+        deleted = await notes_service.delete_protected(db, protected)
     if not deleted:
         raise_not_found()
 
@@ -369,7 +363,7 @@ async def update_note(slug: str, payload: NoteUpdate, db: DbSession) -> NoteRead
         )
     # Текст зашифрован паролем: изменить его, не зная пароля, нельзя
     _reject_if_protected(note, "a new note")
-    updated = await db.run_sync(notes_service.update_note, note, payload)
+    updated = await notes_service.update_note(db, note, payload)
     return await _present(db, updated, hide_text=False)
 
 
@@ -381,4 +375,4 @@ async def update_note(slug: str, payload: NoteUpdate, db: DbSession) -> NoteRead
 async def delete_note(slug: str, db: DbSession) -> None:
     note = await get_note_or_404(db, slug)
     _reject_if_protected(note, "POST /{slug}/delete with the password")
-    await db.run_sync(notes_service.delete_note, note)
+    await notes_service.delete_note(db, note)

@@ -320,7 +320,7 @@ async def test_failed_creation_leaves_no_copies(
 
     async def attach_to_rival() -> None:
         async with async_session_factory() as other, other.begin():
-            rival_note = await other.run_sync(notes_service.get_note_by_slug, rival["slug"])
+            rival_note = await notes_service.get_note_by_slug(other, rival["slug"])
             await other.run_sync(files_service.attach_to_note, rival_note.id, [file_id])
 
     def rival_attaches_meanwhile(*args):
@@ -358,10 +358,10 @@ def arm_after_commit(monkeypatch, on_close):
     original_create = notes_service.create_note
     original_close = AsyncSession.close
 
-    def create_and_arm(*args, **kwargs):
+    async def create_and_arm(*args, **kwargs):
         nonlocal armed
         armed = True
-        return original_create(*args, **kwargs)
+        return await original_create(*args, **kwargs)
 
     async def close(self):
         nonlocal armed
