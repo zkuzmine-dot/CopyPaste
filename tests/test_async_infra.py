@@ -15,17 +15,17 @@ from tests.conftest import ASYNCIO_DEBUG, TEST_DATABASE_URL
 pytestmark = pytest.mark.anyio
 
 
-async def test_async_db_uses_test_database(async_db):
-    assert await async_db.scalar(text("SELECT current_database()")) == TEST_DATABASE_URL.database
+async def test_async_db_uses_test_database(db):
+    assert await db.scalar(text("SELECT current_database()")) == TEST_DATABASE_URL.database
 
 
-async def test_session_commit_keeps_outer_transaction(async_db, async_connection):
-    async_db.add(Note(text="hello"))
-    await async_db.commit()
+async def test_session_commit_keeps_outer_transaction(db, connection):
+    db.add(Note(text="hello"))
+    await db.commit()
 
     # commit сессии — только savepoint: внешняя транзакция теста откатится в конце
-    assert async_connection.in_transaction()
-    assert await async_db.scalar(select(func.count()).select_from(Note)) == 1
+    assert connection.in_transaction()
+    assert await db.scalar(select(func.count()).select_from(Note)) == 1
 
 
 async def test_blocking_call_from_app_in_loop_fails(client, monkeypatch):

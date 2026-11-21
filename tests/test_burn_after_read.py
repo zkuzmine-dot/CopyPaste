@@ -55,8 +55,8 @@ async def test_qr_does_not_burn(client, burn_slug):
     assert (await client.post(f"{URL}/{burn_slug}/read")).status_code == 200
 
 
-async def test_read_unknown_and_expired(client, async_connection, burn_slug):
-    await async_connection.execute(
+async def test_read_unknown_and_expired(client, connection, burn_slug):
+    await connection.execute(
         update(Note)
         .where(Note.slug == burn_slug)
         .values(expires_at=func.now() - timedelta(seconds=1))

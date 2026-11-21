@@ -160,33 +160,33 @@ def slow_loop_steps(request):
 
 
 @pytest.fixture(scope="session")
-async def async_engine(test_database):
-    async_engine = create_async_engine(TEST_DATABASE_URL)
-    yield async_engine
-    await async_engine.dispose()
+async def engine(test_database):
+    engine = create_async_engine(TEST_DATABASE_URL)
+    yield engine
+    await engine.dispose()
 
 
 @pytest.fixture
-async def async_connection(async_engine):
+async def connection(engine):
     # Весь тест — одна внешняя транзакция, которая в конце откатывается:
     # тесты не видят данные друг друга, а БД не нужно чистить
-    async with async_engine.connect() as connection:
+    async with engine.connect() as connection:
         transaction = await connection.begin()
         yield connection
         await transaction.rollback()
 
 
 @pytest.fixture
-def async_session_factory(async_connection) -> async_sessionmaker[AsyncSession]:
+def session_factory(connection) -> async_sessionmaker[AsyncSession]:
     # create_savepoint: commit/rollback сессии работают с SAVEPOINT, а не с внешней транзакцией
     return async_sessionmaker(
-        bind=async_connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
     )
 
 
 @pytest.fixture
-async def async_db(async_session_factory):
-    async with async_session_factory() as session:
+async def db(session_factory):
+    async with session_factory() as session:
         yield session
 
 
@@ -216,8 +216,8 @@ async def _serving(
 
 
 @pytest.fixture
-async def client(async_session_factory, file_storage, redis_client):
-    async with _serving(async_session_factory, file_storage, redis_client) as client:
+async def client(session_factory, file_storage, redis_client):
+    async with _serving(session_factory, file_storage, redis_client) as client:
         yield client
 
 
@@ -225,15 +225,15 @@ TABLES = ("notes", "channels", "participants", "messages", "stored_files")
 
 
 @pytest.fixture
-async def committing_session_factory(async_engine):
+async def committing_session_factory(engine):
     """Настоящие коммиты: у каждой сессии своё соединение из пула.
 
     Нужно, когда приложение ходит в БД параллельно — WebSocket и таймер бездействия, гонки,
     одновременные запросы: одно тестовое соединение так не умеет. Данные видны всем
     соединениям, поэтому после теста таблицы очищаются.
     """
-    yield async_sessionmaker(async_engine, expire_on_commit=False)
-    async with async_engine.begin() as connection:
+    yield async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
         await connection.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
 
 

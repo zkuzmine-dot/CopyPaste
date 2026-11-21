@@ -41,12 +41,12 @@ def files_on_disk(file_storage) -> list:
     return [p for p in root.rglob("*") if p.is_file()] if root.exists() else []
 
 
-async def row(async_db, file_id: str) -> StoredFile | None:
-    return await async_db.scalar(select(StoredFile).where(StoredFile.public_id == file_id))
+async def row(db, file_id: str) -> StoredFile | None:
+    return await db.scalar(select(StoredFile).where(StoredFile.public_id == file_id))
 
 
-async def mark_delete_after_download(async_db, file_id: str) -> None:
-    await async_db.execute(
+async def mark_delete_after_download(db, file_id: str) -> None:
+    await db.execute(
         update(StoredFile).where(StoredFile.public_id == file_id).values(delete_after_download=True)
     )
 
@@ -54,7 +54,7 @@ async def mark_delete_after_download(async_db, file_id: str) -> None:
 # --- загрузка ---
 
 
-async def test_upload(client, async_db, file_storage):
+async def test_upload(client, db, file_storage):
     response = await upload(client, b"hello", "notes.txt")
 
     assert response.status_code == 201
@@ -66,7 +66,7 @@ async def test_upload(client, async_db, file_storage):
         "content_type": "application/octet-stream",
         "is_image": False,
     }
-    stored = await row(async_db, body["id"])
+    stored = await row(db, body["id"])
     assert stored.origin == "note"
     assert stored.note_id is None
     assert stored.keep_until - stored.created_at == timedelta(
@@ -102,11 +102,11 @@ async def test_upload_without_name_is_422(client):
     assert (await client.post(URL, content=b"hello")).status_code == 422
 
 
-async def test_empty_upload_is_400(client, async_db, file_storage):
+async def test_empty_upload_is_400(client, db, file_storage):
     response = await upload(client, b"")
 
     assert response.status_code == 400
-    assert await async_db.scalar(select(func.count()).select_from(StoredFile)) == 0
+    assert await db.scalar(select(func.count()).select_from(StoredFile)) == 0
     assert files_on_disk(file_storage) == []
 
 
@@ -116,17 +116,17 @@ async def test_upload_of_exact_limit(client, monkeypatch):
     assert (await upload(client, b"x" * 10)).status_code == 201
 
 
-async def test_too_large_by_content_length(client, async_db, file_storage, monkeypatch):
+async def test_too_large_by_content_length(client, db, file_storage, monkeypatch):
     monkeypatch.setattr(settings, "FILE_MAX_SIZE_BYTES", 10)
 
     response = await upload(client, b"x" * 11)
 
     assert response.status_code == 413
-    assert await async_db.scalar(select(func.count()).select_from(StoredFile)) == 0
+    assert await db.scalar(select(func.count()).select_from(StoredFile)) == 0
     assert files_on_disk(file_storage) == []
 
 
-async def test_too_large_without_content_length(client, async_db, file_storage, monkeypatch):
+async def test_too_large_without_content_length(client, db, file_storage, monkeypatch):
     # Content-Length можно не прислать: тогда лимит срабатывает во время чтения потока
     monkeypatch.setattr(settings, "FILE_MAX_SIZE_BYTES", 10)
 
@@ -137,7 +137,7 @@ async def test_too_large_without_content_length(client, async_db, file_storage, 
     response = await upload(client, chunks())
 
     assert response.status_code == 413
-    assert await async_db.scalar(select(func.count()).select_from(StoredFile)) == 0
+    assert await db.scalar(select(func.count()).select_from(StoredFile)) == 0
     assert files_on_disk(file_storage) == []
 
 
@@ -226,9 +226,9 @@ async def test_valid_link_to_missing_file_is_410(client):
     assert (await client.get(link("never-existed"))).status_code == 410
 
 
-async def test_expired_pending_upload_is_410(client, async_db):
+async def test_expired_pending_upload_is_410(client, db):
     file_id = await uploaded_id(client)
-    await async_db.execute(
+    await db.execute(
         update(StoredFile)
         .where(StoredFile.public_id == file_id)
         .values(keep_until=func.now() - timedelta(seconds=1))
@@ -244,20 +244,20 @@ def received(file_id: str, *, ttl: int = 60) -> str:
     return signing.received_url(file_id, int(time.time()) + ttl)
 
 
-async def test_download_does_not_delete_one_time_file(client, async_db):
+async def test_download_does_not_delete_one_time_file(client, db):
     # Сервер не знает, дошли ли байты до клиента, поэтому сам ничего не удаляет
     file_id = await uploaded_id(client, b"secret")
-    await mark_delete_after_download(async_db, file_id)
+    await mark_delete_after_download(db, file_id)
 
     assert (await client.get(link(file_id))).content == b"secret"
     assert (await client.get(link(file_id))).content == b"secret"
-    assert await row(async_db, file_id) is not None
+    assert await row(db, file_id) is not None
 
 
-async def test_range_works_for_one_time_file(client, async_db):
+async def test_range_works_for_one_time_file(client, db):
     # Докачка после обрыва — для медленного интернета
     file_id = await uploaded_id(client, b"secret")
-    await mark_delete_after_download(async_db, file_id)
+    await mark_delete_after_download(db, file_id)
 
     response = await client.get(link(file_id), headers={"Range": "bytes=2-"})
 
@@ -265,25 +265,25 @@ async def test_range_works_for_one_time_file(client, async_db):
     assert response.content == b"cret"
 
 
-async def test_received_deletes_one_time_file(client, async_db, file_storage):
+async def test_received_deletes_one_time_file(client, db, file_storage):
     file_id = await uploaded_id(client, b"secret")
-    path = file_storage.path((await row(async_db, file_id)).storage_key)
-    await mark_delete_after_download(async_db, file_id)
+    path = file_storage.path((await row(db, file_id)).storage_key)
+    await mark_delete_after_download(db, file_id)
 
     assert (await client.post(received(file_id))).status_code == 204
 
-    assert await row(async_db, file_id) is None
+    assert await row(db, file_id) is None
     assert not path.exists()
     assert (await client.get(link(file_id))).status_code == 410
     # Повтор ничего не ломает: клиент может переспросить, если не дождался ответа
     assert (await client.post(received(file_id))).status_code == 204
 
 
-async def test_received_does_not_delete_regular_file(client, async_db):
+async def test_received_does_not_delete_regular_file(client, db):
     file_id = await uploaded_id(client, b"data")
 
     assert (await client.post(received(file_id))).status_code == 204
-    assert await row(async_db, file_id) is not None
+    assert await row(db, file_id) is not None
 
 
 @pytest.mark.parametrize(
@@ -298,10 +298,10 @@ async def test_received_does_not_delete_regular_file(client, async_db):
     ],
     ids=["forged", "expired", "preview_link"],
 )
-async def test_received_with_bad_link_is_403(client, async_db, make_query):
+async def test_received_with_bad_link_is_403(client, db, make_query):
     file_id = await uploaded_id(client, PNG, "photo.png")
-    await mark_delete_after_download(async_db, file_id)
+    await mark_delete_after_download(db, file_id)
     response = await client.post(f"{URL}/{file_id}/received", params=make_query(file_id))
 
     assert response.status_code == 403
-    assert await row(async_db, file_id) is not None
+    assert await row(db, file_id) is not None

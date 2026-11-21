@@ -87,10 +87,10 @@ async def test_state_after_join(client, created, joined):
     assert (sender_state["role"], sender_state["peer_joined"]) == ("sender", True)
 
 
-async def test_state_shows_messages(client, async_db, created, joined):
-    channel = await channels_service.get_active_channel(async_db, created["slug"])
-    sender = await channels_service.get_participant(async_db, channel, joined["token"])
-    await channels_service.add_message(async_db, sender, "hello")
+async def test_state_shows_messages(client, db, created, joined):
+    channel = await channels_service.get_active_channel(db, created["slug"])
+    sender = await channels_service.get_participant(db, channel, joined["token"])
+    await channels_service.add_message(db, sender, "hello")
 
     messages = (await get_state(client, created["slug"], created["token"])).json()["messages"]
 
@@ -121,9 +121,9 @@ async def test_state_unknown_channel(client, created):
     assert response.status_code == 404
 
 
-async def test_state_closed_channel(client, async_db, created):
-    channel = await channels_service.get_active_channel(async_db, created["slug"])
-    await channels_service.close_channel(async_db, channel)
+async def test_state_closed_channel(client, db, created):
+    channel = await channels_service.get_active_channel(db, created["slug"])
+    await channels_service.close_channel(db, channel)
 
     response = await get_state(client, created["slug"], created["token"])
 

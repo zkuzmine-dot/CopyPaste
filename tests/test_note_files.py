@@ -39,7 +39,7 @@ def link_expires(url: str) -> int:
     return int(parse_qs(urlsplit(url).query)["exp"][0])
 
 
-async def stored(async_db, file_id: str) -> StoredFile | None:
+async def stored(db, file_id: str) -> StoredFile | None:
     # populate_existing: строку меняют запросы в других сессиях, а объект из identity map
     # без этого вернулся бы со старыми значениями
     stmt = (
@@ -47,17 +47,17 @@ async def stored(async_db, file_id: str) -> StoredFile | None:
         .where(StoredFile.public_id == file_id)
         .execution_options(populate_existing=True)
     )
-    return await async_db.scalar(stmt)
+    return await db.scalar(stmt)
 
 
-async def notes_count(async_db) -> int:
-    return await async_db.scalar(select(func.count()).select_from(Note))
+async def notes_count(db) -> int:
+    return await db.scalar(select(func.count()).select_from(Note))
 
 
 # --- создание ---
 
 
-async def test_create_note_with_files(client, async_db):
+async def test_create_note_with_files(client, db):
     txt = await upload(client, b"hello", "notes.txt")
     png = await upload(client, PNG, "photo.png")
 
@@ -70,8 +70,8 @@ async def test_create_note_with_files(client, async_db):
     assert text_file["preview_url"] is None
     assert (await client.get(text_file["download_url"])).content == b"hello"
     assert (await client.get(photo["preview_url"])).headers["content-type"] == "image/png"
-    note_id = await async_db.scalar(select(Note.id).where(Note.slug == note["slug"]))
-    rows = [await stored(async_db, png), await stored(async_db, txt)]
+    note_id = await db.scalar(select(Note.id).where(Note.slug == note["slug"]))
+    rows = [await stored(db, png), await stored(db, txt)]
     assert [(r.note_id, r.position, r.keep_until) for r in rows] == [
         (note_id, 0, None),
         (note_id, 1, None),
@@ -102,24 +102,24 @@ async def test_note_with_only_files(client):
     ],
     ids=["nothing", "empty_text_no_files", "too_many_files", "duplicates", "empty_id"],
 )
-async def test_invalid_file_ids(client, async_db, body):
+async def test_invalid_file_ids(client, db, body):
     assert (await create(client, **body)).status_code == 422
-    assert await notes_count(async_db) == 0
+    assert await notes_count(db) == 0
 
 
-async def _unknown(client, async_db) -> str:
+async def _unknown(client, db) -> str:
     return "never-uploaded"
 
 
-async def _attached(client, async_db) -> str:
+async def _attached(client, db) -> str:
     file_id = await upload(client)
     await created(client, text="first", file_ids=[file_id])
     return file_id
 
 
-async def _expired(client, async_db) -> str:
+async def _expired(client, db) -> str:
     file_id = await upload(client)
-    await async_db.execute(
+    await db.execute(
         update(StoredFile)
         .where(StoredFile.public_id == file_id)
         .values(keep_until=func.now() - timedelta(seconds=1))
@@ -127,9 +127,9 @@ async def _expired(client, async_db) -> str:
     return file_id
 
 
-async def _from_channel(client, async_db) -> str:
+async def _from_channel(client, db) -> str:
     channel_file = await files_service.create_upload(
-        async_db,
+        db,
         storage_key=new_storage_key(),
         name="a.txt",
         content_type="application/octet-stream",
@@ -144,17 +144,17 @@ async def _from_channel(client, async_db) -> str:
     [_unknown, _attached, _expired, _from_channel],
     ids=["unknown", "already_attached", "expired", "channel_file"],
 )
-async def test_unavailable_file_rejects_whole_note(client, async_db, make_bad_file):
-    bad = await make_bad_file(client, async_db)
+async def test_unavailable_file_rejects_whole_note(client, db, make_bad_file):
+    bad = await make_bad_file(client, db)
     good = await upload(client)
-    notes_before = await notes_count(async_db)
+    notes_before = await notes_count(db)
 
     response = await create(client, text="x", file_ids=[good, bad])
 
     assert response.status_code == 422
-    assert await notes_count(async_db) == notes_before
+    assert await notes_count(db) == notes_before
     # Откатилось всё: исправный файл тоже не привязан и ждёт дальше
-    good_row = await stored(async_db, good)
+    good_row = await stored(db, good)
     assert good_row.note_id is None
     assert good_row.keep_until is not None
 
@@ -179,10 +179,10 @@ async def test_links_do_not_outlive_note(client):
     assert link_expires(note["files"][0]["download_url"]) <= int(expires_at.timestamp())
 
 
-async def test_files_of_expired_note_are_unavailable(client, async_db):
+async def test_files_of_expired_note_are_unavailable(client, db):
     # Чистка ещё не прошла, заметка лежит в БД — но файл уже не отдаём
     note = await created(client, text="x", file_ids=[await upload(client)])
-    await async_db.execute(
+    await db.execute(
         update(Note)
         .where(Note.slug == note["slug"])
         .values(expires_at=func.now() - timedelta(seconds=1))
@@ -210,32 +210,28 @@ async def test_read_regular_note_gives_links(client):
 # --- удаление и истечение ---
 
 
-async def test_deleted_note_files_are_collected(
-    client, async_db, async_session_factory, file_storage
-):
+async def test_deleted_note_files_are_collected(client, db, session_factory, file_storage):
     file_id = await upload(client)
-    path = file_storage.path((await stored(async_db, file_id)).storage_key)
+    path = file_storage.path((await stored(db, file_id)).storage_key)
     note = await created(client, text="x", file_ids=[file_id])
 
     assert (await client.delete(f"{NOTES}/{note['slug']}")).status_code == 204
-    assert await run_files_gc(async_session_factory, file_storage) == 1
+    assert await run_files_gc(session_factory, file_storage) == 1
     assert not path.exists()
 
 
-async def test_expired_note_files_are_collected(
-    client, async_db, async_session_factory, file_storage
-):
+async def test_expired_note_files_are_collected(client, db, session_factory, file_storage):
     file_id = await upload(client)
-    path = file_storage.path((await stored(async_db, file_id)).storage_key)
+    path = file_storage.path((await stored(db, file_id)).storage_key)
     note = await created(client, text="x", file_ids=[file_id])
-    await async_db.execute(
+    await db.execute(
         update(Note)
         .where(Note.slug == note["slug"])
         .values(expires_at=func.now() - timedelta(seconds=1))
     )
 
-    assert await run_cleanup(async_session_factory) == 1
-    assert await run_files_gc(async_session_factory, file_storage) == 1
+    assert await run_cleanup(session_factory) == 1
+    assert await run_files_gc(session_factory, file_storage) == 1
     assert not path.exists()
 
 
@@ -259,10 +255,10 @@ async def test_burn_note_has_no_links_until_read(client):
     assert got["text"] is None
 
 
-async def test_burn_read_gives_one_time_links(client, async_db, file_storage):
+async def test_burn_read_gives_one_time_links(client, db, file_storage):
     png = await upload(client, PNG, "photo.png")
     txt = await upload(client, b"hello", "notes.txt")
-    txt_path = file_storage.path((await stored(async_db, txt)).storage_key)
+    txt_path = file_storage.path((await stored(db, txt)).storage_key)
     note = await created(client, text="secret", file_ids=[png, txt], burn_after_read=True)
 
     read = (await client.post(f"{NOTES}/{note['slug']}/read")).json()
@@ -272,7 +268,7 @@ async def test_burn_read_gives_one_time_links(client, async_db, file_storage):
     # Так договорились: у одноразовой заметки картинка — просто файл, без превью
     assert photo["preview_url"] is None
     assert text_file["received_url"] is not None
-    row = await stored(async_db, txt)
+    row = await stored(db, txt)
     assert row.note_id is None
     assert row.delete_after_download is True
     assert link_expires(text_file["download_url"]) == int(row.keep_until.timestamp())
@@ -282,24 +278,22 @@ async def test_burn_read_gives_one_time_links(client, async_db, file_storage):
 
     # Скачивание само ничего не удаляет: оборванное можно повторить
     assert (await client.get(text_file["download_url"])).content == b"hello"
-    assert await stored(async_db, txt) is not None
+    assert await stored(db, txt) is not None
 
     assert (await client.post(text_file["received_url"])).status_code == 204
     assert (await client.get(text_file["download_url"])).status_code == 410
-    assert await stored(async_db, txt) is None
+    assert await stored(db, txt) is None
     assert not txt_path.exists()
     # Получение второго файла не подтверждали — он на месте
-    assert await stored(async_db, png) is not None
+    assert await stored(db, png) is not None
 
 
-async def test_unread_burn_files_disappear_after_window(
-    client, async_db, async_session_factory, file_storage
-):
+async def test_unread_burn_files_disappear_after_window(client, db, session_factory, file_storage):
     note = await created(
         client, text="secret", file_ids=[await upload(client)], burn_after_read=True
     )
     url = (await client.post(f"{NOTES}/{note['slug']}/read")).json()["files"][0]["download_url"]
-    await async_db.execute(update(StoredFile).values(keep_until=func.now() - timedelta(seconds=1)))
+    await db.execute(update(StoredFile).values(keep_until=func.now() - timedelta(seconds=1)))
 
-    assert await run_files_gc(async_session_factory, file_storage) == 1
+    assert await run_files_gc(session_factory, file_storage) == 1
     assert (await client.get(url)).status_code == 410

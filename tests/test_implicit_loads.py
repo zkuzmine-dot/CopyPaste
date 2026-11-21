@@ -22,31 +22,31 @@ async def flushed_note(db: AsyncSession) -> Note:
     return note
 
 
-async def test_expired_attribute_is_not_loaded_silently(async_db):
-    note = await flushed_note(async_db)
+async def test_expired_attribute_is_not_loaded_silently(db):
+    note = await flushed_note(db)
 
     with pytest.raises(ImplicitLoadError):
         _ = note.text
 
 
-async def test_explicit_refresh_is_allowed(async_db):
-    note = await flushed_note(async_db)
+async def test_explicit_refresh_is_allowed(db):
+    note = await flushed_note(db)
 
-    await async_db.refresh(note)
+    await db.refresh(note)
 
     assert note.text == "hello"
 
 
-async def test_participant_channel_is_never_lazy_loaded(async_db):
-    created, _ = await channels_service.create_channel(async_db)
+async def test_participant_channel_is_never_lazy_loaded(db):
+    created, _ = await channels_service.create_channel(db)
     participant_id = created.id
-    async_db.expunge_all()
+    db.expunge_all()
 
-    participant = await async_db.get(Participant, participant_id)
+    participant = await db.get(Participant, participant_id)
     with pytest.raises(InvalidRequestError, match="lazy='raise'"):
         _ = participant.channel
 
-    async_db.expunge_all()
+    db.expunge_all()
     options = [joinedload(Participant.channel)]
-    loaded = await async_db.get(Participant, participant_id, options=options)
+    loaded = await db.get(Participant, participant_id, options=options)
     assert loaded.channel.id == loaded.channel_id

@@ -40,8 +40,8 @@ async def test_note_qr_unknown_slug(client):
     assert response.status_code == 404
 
 
-async def test_note_qr_expired(client, async_connection, slug):
-    await async_connection.execute(
+async def test_note_qr_expired(client, connection, slug):
+    await connection.execute(
         update(Note).where(Note.slug == slug).values(expires_at=func.now() - timedelta(seconds=1))
     )
 

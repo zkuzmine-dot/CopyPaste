@@ -23,9 +23,9 @@ async def note(client) -> dict:
     return response.json()
 
 
-async def expire(async_connection, slug: str) -> None:
+async def expire(connection, slug: str) -> None:
     # Через API прошлый expires_at не задать (422), поэтому правим строку напрямую
-    await async_connection.execute(
+    await connection.execute(
         update(Note).where(Note.slug == slug).values(expires_at=func.now() - timedelta(seconds=1))
     )
 
@@ -130,8 +130,8 @@ async def test_unknown_slug_returns_404(client, method, body):
     ("method", "body"),
     [("get", None), ("put", {"text": "x"}), ("delete", None)],
 )
-async def test_expired_note_returns_404(client, async_connection, note, method, body):
-    await expire(async_connection, note["slug"])
+async def test_expired_note_returns_404(client, connection, note, method, body):
+    await expire(connection, note["slug"])
     kwargs = {"json": body} if body else {}
 
     response = await client.request(method, f"{URL}/{note['slug']}", **kwargs)

@@ -58,11 +58,11 @@ async def protected_file(client, content=CONTENT, name="data.bin", **extra) -> d
     return file
 
 
-async def row(async_db, public_id: str) -> StoredFile:
-    stored = await async_db.scalar(select(StoredFile).where(StoredFile.public_id == public_id))
+async def row(db, public_id: str) -> StoredFile:
+    stored = await db.scalar(select(StoredFile).where(StoredFile.public_id == public_id))
     assert stored is not None
     # Строку меняли другие сессии — берём свежие значения
-    await async_db.refresh(stored)
+    await db.refresh(stored)
     return stored
 
 
@@ -77,13 +77,13 @@ def query_of(url: str) -> dict[str, str]:
 # --- хранение ---
 
 
-async def test_files_are_encrypted_on_disk(client, async_db, file_storage):
+async def test_files_are_encrypted_on_disk(client, db, file_storage):
     file_id = await upload(client)
-    plain_key = (await row(async_db, file_id)).storage_key
+    plain_key = (await row(db, file_id)).storage_key
 
     await create(client, [file_id])
 
-    stored = await row(async_db, file_id)
+    stored = await row(db, file_id)
     assert len(stored.encryption_nonce) == crypto.FILE_NONCE_BYTES
     assert stored.chunk_size == CHUNK
     # Копия под новым ключом, открытый исходник стёрт после коммита
@@ -95,14 +95,14 @@ async def test_files_are_encrypted_on_disk(client, async_db, file_storage):
     assert CONTENT[:16] not in on_disk
 
 
-async def test_regular_note_files_stay_plain(client, async_db, file_storage):
+async def test_regular_note_files_stay_plain(client, db, file_storage):
     file_id = await upload(client)
-    plain_key = (await row(async_db, file_id)).storage_key
+    plain_key = (await row(db, file_id)).storage_key
 
     response = await client.post(NOTES, json={"file_ids": [file_id]})
 
     assert response.status_code == 201
-    stored = await row(async_db, file_id)
+    stored = await row(db, file_id)
     assert (stored.storage_key, stored.encryption_nonce, stored.chunk_size) == (
         plain_key,
         None,
@@ -193,13 +193,13 @@ async def test_if_range(client):
 # --- повреждения ---
 
 
-async def stored_path(async_db, file_storage, file: dict):
-    return file_storage.path((await row(async_db, file["id"])).storage_key)
+async def stored_path(db, file_storage, file: dict):
+    return file_storage.path((await row(db, file["id"])).storage_key)
 
 
-async def test_tampered_chunk_is_an_error_not_garbage(client, async_db, file_storage):
+async def test_tampered_chunk_is_an_error_not_garbage(client, db, file_storage):
     file = await protected_file(client)
-    path = await stored_path(async_db, file_storage, file)
+    path = await stored_path(db, file_storage, file)
     damaged = bytearray(path.read_bytes())
     damaged[3 * (CHUNK + crypto.TAG_BYTES) + 5] ^= 0x01
     path.write_bytes(damaged)
@@ -211,9 +211,9 @@ async def test_tampered_chunk_is_an_error_not_garbage(client, async_db, file_sto
         await client.get(file["download_url"])
 
 
-async def test_file_cut_at_chunk_boundary_is_an_error(client, async_db, file_storage):
+async def test_file_cut_at_chunk_boundary_is_an_error(client, db, file_storage):
     file = await protected_file(client)
-    path = await stored_path(async_db, file_storage, file)
+    path = await stored_path(db, file_storage, file)
     # Все оставшиеся куски целые — обрезку выдаёт только признак последнего куска
     path.write_bytes(path.read_bytes()[: 5 * (CHUNK + crypto.TAG_BYTES)])
 
@@ -221,9 +221,9 @@ async def test_file_cut_at_chunk_boundary_is_an_error(client, async_db, file_sto
         await client.get(file["download_url"])
 
 
-async def test_missing_bytes_are_410(client, async_db, file_storage):
+async def test_missing_bytes_are_410(client, db, file_storage):
     file = await protected_file(client)
-    (await stored_path(async_db, file_storage, file)).unlink()
+    (await stored_path(db, file_storage, file)).unlink()
 
     assert (await client.get(file["download_url"])).status_code == 410
 
@@ -296,9 +296,9 @@ async def test_unavailable_redis_on_download_is_503(client):
 # --- одноразовая заметка ---
 
 
-async def test_burn_note_file_is_one_time(client, async_db, file_storage):
+async def test_burn_note_file_is_one_time(client, db, file_storage):
     file = await protected_file(client, burn_after_read=True)
-    stored_key = (await row(async_db, file["id"])).storage_key
+    stored_key = (await row(db, file["id"])).storage_key
 
     assert (await client.get(file["download_url"])).content == CONTENT
     assert (await client.post(file["received_url"])).status_code == 204
@@ -311,15 +311,15 @@ async def test_burn_note_file_is_one_time(client, async_db, file_storage):
 
 
 async def test_failed_creation_leaves_no_copies(
-    client, async_db, file_storage, async_session_factory, monkeypatch
+    client, db, file_storage, session_factory, monkeypatch
 ):
     file_id = await upload(client)
-    plain_key = (await row(async_db, file_id)).storage_key
+    plain_key = (await row(db, file_id)).storage_key
     rival = (await client.post(NOTES, json={"text": "чужая"})).json()
     original = notes_service.encrypt_uploads
 
     async def attach_to_rival() -> None:
-        async with async_session_factory() as other, other.begin():
+        async with session_factory() as other, other.begin():
             rival_note = await notes_service.get_note_by_slug(other, rival["slug"])
             await files_service.attach_to_note(other, rival_note.id, [file_id])
 
@@ -336,12 +336,12 @@ async def test_failed_creation_leaves_no_copies(
     assert response.status_code == 422
     # Зашифрованная копия стёрта, исходник на месте — он теперь у другой заметки
     assert files_on_disk(file_storage) == [file_storage.path(plain_key)]
-    assert (await row(async_db, file_id)).storage_key == plain_key
+    assert (await row(db, file_id)).storage_key == plain_key
 
 
-async def test_upload_without_bytes_is_422(client, async_db, file_storage):
+async def test_upload_without_bytes_is_422(client, db, file_storage):
     file_id = await upload(client)
-    file_storage.path((await row(async_db, file_id)).storage_key).unlink()
+    file_storage.path((await row(db, file_id)).storage_key).unlink()
 
     response = await client.post(NOTES, json={"file_ids": [file_id], "password": PASSWORD})
 
@@ -375,9 +375,9 @@ def arm_after_commit(monkeypatch, on_close):
     monkeypatch.setattr(AsyncSession, "close", close)
 
 
-async def test_cancel_after_commit_still_cleans_up(client, async_db, file_storage, monkeypatch):
+async def test_cancel_after_commit_still_cleans_up(client, db, file_storage, monkeypatch):
     file_id = await upload(client)
-    plain_key = (await row(async_db, file_id)).storage_key
+    plain_key = (await row(db, file_id)).storage_key
     closing = anyio.Event()
 
     async def slow_close(session, original_close):
@@ -396,16 +396,14 @@ async def test_cancel_after_commit_still_cleans_up(client, async_db, file_storag
         await closing.wait()
         group.cancel_scope.cancel()
 
-    stored = await row(async_db, file_id)
+    stored = await row(db, file_id)
     assert stored.note_id is not None
     assert file_storage.path(stored.storage_key).exists()
     # Без защиты от отмены уборка не дошла бы до открытого исходника
     assert not file_storage.path(plain_key).exists()
 
 
-async def test_error_after_commit_keeps_encrypted_copies(
-    client, async_db, file_storage, monkeypatch
-):
+async def test_error_after_commit_keeps_encrypted_copies(client, db, file_storage, monkeypatch):
     file_id = await upload(client)
 
     async def broken_close(session, original_close):
@@ -418,6 +416,6 @@ async def test_error_after_commit_keeps_encrypted_copies(
         await client.post(NOTES, json={"file_ids": [file_id], "password": PASSWORD})
 
     # Коммит прошёл: строка указывает на зашифрованную копию — стирать её нельзя
-    stored = await row(async_db, file_id)
+    stored = await row(db, file_id)
     assert stored.encryption_nonce is not None
     assert file_storage.path(stored.storage_key).exists()

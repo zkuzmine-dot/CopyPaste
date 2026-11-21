@@ -77,12 +77,10 @@ async def test_create_protected_note(client):
     assert note["text"] is None
 
 
-async def test_text_is_not_stored_in_plain_form(client, async_db):
+async def test_text_is_not_stored_in_plain_form(client, db):
     note = await protected(client)
 
-    row = await async_db.execute(
-        sql("SELECT * FROM notes WHERE slug = :slug"), {"slug": note["slug"]}
-    )
+    row = await db.execute(sql("SELECT * FROM notes WHERE slug = :slug"), {"slug": note["slug"]})
     values = row.mappings().one()
 
     assert values["text"] == ""
