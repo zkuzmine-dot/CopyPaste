@@ -27,7 +27,7 @@ async def run_files_gc(
     session_factory: async_sessionmaker[AsyncSession], storage: FileStorage
 ) -> int:
     async with session_factory() as db, db.begin():
-        keys = await db.run_sync(files_service.collect_garbage)
+        keys = await files_service.collect_garbage(db)
     # Байты — только после коммита: если стереть раньше, а транзакция откатится,
     # в БД останется строка, указывающая на несуществующий файл. Диск — в потоке
     await anyio.to_thread.run_sync(_delete_keys, storage, keys)
@@ -51,7 +51,7 @@ async def run_disk_sweep(
     # Обход диска — порциями в потоке: в цикле событий он остановил бы другие задачи
     while batch := await anyio.to_thread.run_sync(lambda: list(islice(keys, SWEEP_BATCH_SIZE))):
         async with session_factory() as db:
-            known = await db.run_sync(files_service.known_keys, batch)
+            known = await files_service.known_keys(db, batch)
         orphan_keys = [key for key in batch if key not in known]
         await anyio.to_thread.run_sync(_delete_keys, storage, orphan_keys)
         orphans += len(orphan_keys)

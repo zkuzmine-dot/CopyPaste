@@ -16,8 +16,8 @@ pytestmark = pytest.mark.anyio
 
 
 async def make_file(async_db, *, size: int = 1, origin: FileOrigin = FileOrigin.NOTE) -> StoredFile:
-    return await async_db.run_sync(
-        files_service.create_upload,
+    return await files_service.create_upload(
+        async_db,
         storage_key=new_storage_key(),
         name="a.txt",
         content_type="application/octet-stream",
@@ -70,36 +70,36 @@ async def test_create_upload_waits_for_owner(async_db):
 
 
 async def test_total_size(async_db):
-    assert await async_db.run_sync(files_service.total_size) == 0
+    assert await files_service.total_size(async_db) == 0
 
     await make_file(async_db, size=3)
     await make_file(async_db, size=5)
 
-    assert await async_db.run_sync(files_service.total_size) == 8
+    assert await files_service.total_size(async_db) == 8
 
 
 async def test_pending_file_is_available(async_db):
     stored = await make_file(async_db)
 
-    assert await async_db.run_sync(files_service.get_available_file, stored.public_id) is stored
+    assert await files_service.get_available_file(async_db, stored.public_id) is stored
 
 
 async def test_expired_pending_file_is_unavailable(async_db):
     stored = await make_file(async_db)
     await expire(async_db, stored)
 
-    assert await async_db.run_sync(files_service.get_available_file, stored.public_id) is None
+    assert await files_service.get_available_file(async_db, stored.public_id) is None
 
 
 async def test_owned_file_is_available_without_keep_until(async_db, note):
     stored = await make_file(async_db)
     await give_owner(async_db, stored, note=note)
 
-    assert await async_db.run_sync(files_service.get_available_file, stored.public_id) is stored
+    assert await files_service.get_available_file(async_db, stored.public_id) is stored
 
 
 async def test_unknown_file_is_unavailable(async_db):
-    assert await async_db.run_sync(files_service.get_available_file, "nope") is None
+    assert await files_service.get_available_file(async_db, "nope") is None
 
 
 async def test_delete_received_one_time_file_once(async_db):
@@ -108,17 +108,17 @@ async def test_delete_received_one_time_file_once(async_db):
     await async_db.flush()
     key, public_id = stored.storage_key, stored.public_id
 
-    assert await async_db.run_sync(
-        files_service.delete_received, public_id
-    ) == files_service.DeletedFile(storage_key=key, message_id=None, channel_slug=None)
-    assert await async_db.run_sync(files_service.delete_received, public_id) is None
+    assert await files_service.delete_received(async_db, public_id) == files_service.DeletedFile(
+        storage_key=key, message_id=None, channel_slug=None
+    )
+    assert await files_service.delete_received(async_db, public_id) is None
 
 
 async def test_delete_received_keeps_regular_file(async_db, note):
     stored = await make_file(async_db)
     await give_owner(async_db, stored, note=note)
 
-    assert await async_db.run_sync(files_service.delete_received, stored.public_id) is None
+    assert await files_service.delete_received(async_db, stored.public_id) is None
     assert (
         await async_db.scalar(select(StoredFile.id).where(StoredFile.id == stored.id)) == stored.id
     )
@@ -132,7 +132,7 @@ async def test_delete_received_channel_file_removes_message(async_db, message):
     message_id = message.id
     slug = await async_db.scalar(select(Channel.slug).where(Channel.id == message.channel_id))
 
-    deleted = await async_db.run_sync(files_service.delete_received, stored.public_id)
+    deleted = await files_service.delete_received(async_db, stored.public_id)
 
     assert deleted == files_service.DeletedFile(stored.storage_key, message_id, slug)
     assert await async_db.scalar(select(Message).where(Message.id == message_id)) is None
@@ -147,7 +147,7 @@ async def test_file_of_expired_message_is_unavailable(async_db, message):
         .values(expires_at=func.now() - timedelta(seconds=1))
     )
 
-    assert await async_db.run_sync(files_service.get_available_file, stored.public_id) is None
+    assert await files_service.get_available_file(async_db, stored.public_id) is None
 
 
 # --- сборщик ---
@@ -165,7 +165,7 @@ async def test_collect_garbage(async_db, note, message):
     await give_owner(async_db, in_message, message=message)
     garbage_keys = {expired.storage_key, without_keep_until.storage_key}
 
-    assert set(await async_db.run_sync(files_service.collect_garbage)) == garbage_keys
+    assert set(await files_service.collect_garbage(async_db)) == garbage_keys
     assert set(await async_db.scalars(select(StoredFile.id))) == {
         fresh.id,
         in_note.id,
@@ -177,9 +177,9 @@ async def test_collect_garbage_in_batches(async_db):
     for _ in range(3):
         await expire(async_db, await make_file(async_db))
 
-    assert len(await async_db.run_sync(files_service.collect_garbage, limit=2)) == 2
-    assert len(await async_db.run_sync(files_service.collect_garbage, limit=2)) == 1
-    assert await async_db.run_sync(files_service.collect_garbage, limit=2) == []
+    assert len(await files_service.collect_garbage(async_db, limit=2)) == 2
+    assert len(await files_service.collect_garbage(async_db, limit=2)) == 1
+    assert await files_service.collect_garbage(async_db, limit=2) == []
 
 
 async def test_deleted_note_leaves_file_for_collector(async_db, note):
@@ -190,7 +190,7 @@ async def test_deleted_note_leaves_file_for_collector(async_db, note):
     await async_db.refresh(stored)
 
     assert stored.note_id is None
-    assert await async_db.run_sync(files_service.collect_garbage) == [stored.storage_key]
+    assert await files_service.collect_garbage(async_db) == [stored.storage_key]
 
 
 async def test_deleted_channel_leaves_file_for_collector(async_db, message):
@@ -202,12 +202,12 @@ async def test_deleted_channel_leaves_file_for_collector(async_db, message):
     await async_db.refresh(stored)
 
     assert stored.message_id is None
-    assert await async_db.run_sync(files_service.collect_garbage) == [stored.storage_key]
+    assert await files_service.collect_garbage(async_db) == [stored.storage_key]
 
 
 async def test_known_keys(async_db):
     stored = await make_file(async_db)
 
-    assert await async_db.run_sync(
-        files_service.known_keys, [stored.storage_key, new_storage_key()]
-    ) == {stored.storage_key}
+    assert await files_service.known_keys(async_db, [stored.storage_key, new_storage_key()]) == {
+        stored.storage_key
+    }

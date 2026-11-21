@@ -82,7 +82,7 @@ async def _present(db: AsyncSession, note: Note, *, hide_text: bool) -> NoteRead
     links_expire = None if closed else _links_expire_at(note, settings.FILE_URL_TTL_SECONDS)
     files = [
         LinkedFileRead.build(f, links_expire=links_expire)
-        for f in await db.run_sync(files_service.files_of_note, note.id)
+        for f in await files_service.files_of_note(db, note.id)
     ]
     # Текст прячем в схеме, а не в ORM-объекте: note.text = None ушло бы в базу при коммите
     return _note_read(note, files, text=None if hide_text else note.text)
@@ -136,7 +136,7 @@ async def _create(request: Request, payload: NoteCreate) -> NoteRead:
     encrypted = None
     if prepared.key is not None and payload.file_ids:
         async with factory() as db:
-            uploads = await db.run_sync(files_service.pending_uploads, payload.file_ids)
+            uploads = await files_service.pending_uploads(db, payload.file_ids)
         encrypted = await run_in_threadpool(
             notes_service.encrypt_uploads, storage, uploads, prepared.key
         )

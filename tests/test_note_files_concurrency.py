@@ -1,6 +1,6 @@
 import anyio
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.db.models.file import FileOrigin, StoredFile
 from app.db.models.note import Note
@@ -16,12 +16,6 @@ pytestmark = pytest.mark.anyio
 RACE_WINDOW = 0.3
 
 
-def hold(db) -> None:
-    # Пауза на стороне БД: блокировки строк держатся, а цикл событий свободен —
-    # другая задача успевает дойти до тех же строк
-    db.execute(text("SELECT pg_sleep(:seconds)"), {"seconds": RACE_WINDOW})
-
-
 @pytest.fixture
 def factory(committing_session_factory):
     return committing_session_factory
@@ -29,8 +23,8 @@ def factory(committing_session_factory):
 
 async def committed_upload(factory) -> str:
     async with factory() as db, db.begin():
-        stored = await db.run_sync(
-            files_service.create_upload,
+        stored = await files_service.create_upload(
+            db,
             storage_key=new_storage_key(),
             name="a.txt",
             content_type="application/octet-stream",
@@ -47,9 +41,10 @@ async def test_one_file_goes_to_only_one_of_two_notes(factory, monkeypatch):
     # Вторая ждёт, перепроверяет «файл свободен» и получает отказ
     original_attach = files_service.attach_to_note
 
-    def slow_attach(db, note_id, public_ids, encrypted=None):
-        original_attach(db, note_id, public_ids, encrypted)
-        hold(db)
+    async def slow_attach(db, note_id, public_ids, encrypted=None):
+        await original_attach(db, note_id, public_ids, encrypted)
+        # Транзакция держит блокировку строки, а цикл событий свободен для другой задачи
+        await anyio.sleep(RACE_WINDOW)
 
     monkeypatch.setattr(files_service, "attach_to_note", slow_attach)
     results: list[str] = []
@@ -90,10 +85,10 @@ async def test_burn_read_and_note_deletion_do_not_deadlock(factory, monkeypatch)
     files_released = anyio.Event()
     original_release = files_service.release_for_burn
 
-    def slow_release(db, note_id):
-        files = original_release(db, note_id)
+    async def slow_release(db, note_id):
+        files = await original_release(db, note_id)
         files_released.set()
-        hold(db)
+        await anyio.sleep(RACE_WINDOW)
         return files
 
     monkeypatch.setattr(files_service, "release_for_burn", slow_release)

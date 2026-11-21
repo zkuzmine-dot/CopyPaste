@@ -128,8 +128,7 @@ async def create_note(
     db.add(note)
     # id и created_at приходят из INSERT ... RETURNING, refresh не нужен
     await db.flush()
-    # Сервис файлов пока синхронный — через мост run_sync
-    await db.run_sync(files_service.attach_to_note, note.id, payload.file_ids, encrypted_files)
+    await files_service.attach_to_note(db, note.id, payload.file_ids, encrypted_files)
     return note
 
 
@@ -149,13 +148,13 @@ async def _lock_note(db: AsyncSession, note_id: int) -> bool:
 
 async def _open(db: AsyncSession, note: Note) -> NoteWithFiles | None:
     if not note.burn_after_read:
-        return NoteWithFiles(note, await db.run_sync(files_service.files_of_note, note.id))
+        return NoteWithFiles(note, await files_service.files_of_note(db, note.id))
     # Сначала блокируем заметку, потом файлы — в том же порядке, что и DELETE заметки
     # (сама строка, потом SET NULL у файлов). Иначе встречные блокировки дали бы deadlock.
     # Второй одновременный читатель дождётся блокировки и строки уже не найдёт
     if not await _lock_note(db, note.id):
         return None
-    files = await db.run_sync(files_service.release_for_burn, note.id)
+    files = await files_service.release_for_burn(db, note.id)
     await db.execute(
         delete(Note).where(Note.id == note.id).execution_options(synchronize_session=False)
     )
@@ -186,7 +185,7 @@ async def protected_of(db: AsyncSession, note: Note) -> ProtectedNote | None:
         id=note.id,
         slug=note.slug,
         encrypted=encrypted,
-        has_encrypted_files=await db.run_sync(files_service.has_encrypted_files, note.id),
+        has_encrypted_files=await files_service.has_encrypted_files(db, note.id),
     )
 
 

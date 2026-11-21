@@ -172,8 +172,8 @@ async def test_send_file_during_role_swap_is_rejected(factory, monkeypatch):
     slug = await create_committed_channel(factory)
     async with factory() as db, db.begin():
         sender, _ = await channels_service.join_channel(db, slug)
-        stored = await db.run_sync(
-            files_service.create_upload,
+        stored = await files_service.create_upload(
+            db,
             storage_key=new_storage_key(),
             name="a.txt",
             content_type="application/octet-stream",

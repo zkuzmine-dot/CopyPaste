@@ -15,7 +15,7 @@ from sqlalchemy import (
     select,
     update,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.channel import Channel, Message
 from app.db.models.file import FileOrigin, StoredFile
@@ -73,8 +73,8 @@ def _is_garbage() -> ColumnElement[bool]:
     )
 
 
-def create_upload(
-    db: Session,
+async def create_upload(
+    db: AsyncSession,
     *,
     storage_key: str,
     name: str,
@@ -97,24 +97,24 @@ def create_upload(
         )
         .returning(StoredFile)
     )
-    return db.scalars(stmt).one()
+    return (await db.scalars(stmt)).one()
 
 
-def total_size(db: Session) -> int:
-    return cast(int, db.scalar(select(func.coalesce(func.sum(StoredFile.size_bytes), 0))))
+async def total_size(db: AsyncSession) -> int:
+    return cast(int, await db.scalar(select(func.coalesce(func.sum(StoredFile.size_bytes), 0))))
 
 
-def known_keys(db: Session, storage_keys: Sequence[str]) -> set[str]:
+async def known_keys(db: AsyncSession, storage_keys: Sequence[str]) -> set[str]:
     stmt = select(StoredFile.storage_key).where(StoredFile.storage_key.in_(storage_keys))
-    return set(db.scalars(stmt))
+    return set(await db.scalars(stmt))
 
 
-def get_available_file(db: Session, public_id: str) -> StoredFile | None:
+async def get_available_file(db: AsyncSession, public_id: str) -> StoredFile | None:
     stmt = select(StoredFile).where(
         StoredFile.public_id == public_id,
         or_(_owner_is_alive(), StoredFile.keep_until > func.now()),
     )
-    return db.execute(stmt).scalar_one_or_none()
+    return (await db.execute(stmt)).scalar_one_or_none()
 
 
 def _is_free_note_upload(public_ids: Sequence[str]) -> ColumnElement[bool]:
@@ -127,7 +127,7 @@ def _is_free_note_upload(public_ids: Sequence[str]) -> ColumnElement[bool]:
     )
 
 
-def pending_uploads(db: Session, public_ids: Sequence[str]) -> dict[str, str]:
+async def pending_uploads(db: AsyncSession, public_ids: Sequence[str]) -> dict[str, str]:
     """Ключи хранилища загрузок, которые можно привязать к заметке, — чтобы их зашифровать.
 
     Это только предварительная проверка: окончательная — в attach_to_note.
@@ -135,14 +135,14 @@ def pending_uploads(db: Session, public_ids: Sequence[str]) -> dict[str, str]:
     stmt = select(StoredFile.public_id, StoredFile.storage_key).where(
         _is_free_note_upload(public_ids)
     )
-    keys = {public_id: key for public_id, key in db.execute(stmt)}
+    keys = {public_id: key for public_id, key in await db.execute(stmt)}
     if len(keys) != len(public_ids):
         raise FilesNotAvailableError
     return keys
 
 
-def attach_to_note(
-    db: Session,
+async def attach_to_note(
+    db: AsyncSession,
     note_id: int,
     public_ids: Sequence[str],
     encrypted: Mapping[str, EncryptedUpload] | None = None,
@@ -180,23 +180,23 @@ def attach_to_note(
             ),
         )
     attached = stmt.returning(StoredFile.id).execution_options(synchronize_session=False)
-    if len(db.scalars(attached).all()) != len(public_ids):
+    if len((await db.scalars(attached)).all()) != len(public_ids):
         raise FilesNotAvailableError
 
 
-def has_encrypted_files(db: Session, note_id: int) -> bool:
+async def has_encrypted_files(db: AsyncSession, note_id: int) -> bool:
     stmt = select(
         exists().where(StoredFile.note_id == note_id, StoredFile.encryption_nonce.is_not(None))
     )
-    return bool(db.scalar(stmt))
+    return bool(await db.scalar(stmt))
 
 
-def files_of_note(db: Session, note_id: int) -> Sequence[StoredFile]:
+async def files_of_note(db: AsyncSession, note_id: int) -> Sequence[StoredFile]:
     stmt = select(StoredFile).where(StoredFile.note_id == note_id).order_by(StoredFile.position)
-    return db.scalars(stmt).all()
+    return (await db.scalars(stmt)).all()
 
 
-def release_for_burn(db: Session, note_id: int) -> list[StoredFile]:
+async def release_for_burn(db: AsyncSession, note_id: int) -> list[StoredFile]:
     """Перед удалением одноразовой заметки: файлы живут ещё окно и удаляются после скачивания."""
     window = timedelta(seconds=settings.BURN_NOTE_FILES_WINDOW_SECONDS)
     stmt = (
@@ -205,10 +205,10 @@ def release_for_burn(db: Session, note_id: int) -> list[StoredFile]:
         .values(keep_until=func.now() + window, delete_after_download=True)
         .returning(StoredFile)
     )
-    return sorted(db.scalars(stmt).all(), key=lambda stored: stored.position or 0)
+    return sorted((await db.scalars(stmt)).all(), key=lambda stored: stored.position or 0)
 
 
-def delete_received(db: Session, public_id: str) -> DeletedFile | None:
+async def delete_received(db: AsyncSession, public_id: str) -> DeletedFile | None:
     """Клиент получил одноразовый файл: удаляем строку, а у файла канала — и его сообщение.
 
     None, если файл не одноразовый или его уже удалили: тогда и сообщать никому не нужно.
@@ -218,22 +218,22 @@ def delete_received(db: Session, public_id: str) -> DeletedFile | None:
         .where(StoredFile.public_id == public_id, StoredFile.delete_after_download.is_(True))
         .returning(StoredFile.storage_key, StoredFile.message_id)
     )
-    row = db.execute(stmt).one_or_none()
+    row = (await db.execute(stmt)).one_or_none()
     if row is None:
         return None
     channel_slug = None
     if row.message_id is not None:
-        channel_slug = db.scalar(
+        channel_slug = await db.scalar(
             select(Channel.slug)
             .join(Message, Message.channel_id == Channel.id)
             .where(Message.id == row.message_id)
         )
-        db.execute(delete(Message).where(Message.id == row.message_id))
+        await db.execute(delete(Message).where(Message.id == row.message_id))
     return DeletedFile(row.storage_key, row.message_id, channel_slug)
 
 
-def attach_to_message(
-    db: Session, message_id: int, public_id: str, *, uploaded_by_id: int
+async def attach_to_message(
+    db: AsyncSession, message_id: int, public_id: str, *, uploaded_by_id: int
 ) -> StoredFile:
     """FilesNotAvailableError — транзакцию нужно откатить."""
     # Как и с заметками, все условия — в самом UPDATE. Плюс файл должен быть своим:
@@ -251,20 +251,21 @@ def attach_to_message(
         .values(message_id=message_id, keep_until=None, delete_after_download=True)
         .returning(StoredFile)
     )
-    stored = db.scalars(stmt).one_or_none()
+    stored = (await db.scalars(stmt)).one_or_none()
     if stored is None:
         raise FilesNotAvailableError
     return stored
 
 
-def files_of_messages(db: Session, message_ids: Sequence[int]) -> dict[int, StoredFile]:
+async def files_of_messages(db: AsyncSession, message_ids: Sequence[int]) -> dict[int, StoredFile]:
     if not message_ids:
         return {}
     stmt = select(StoredFile).where(StoredFile.message_id.in_(message_ids))
-    return {stored.message_id: stored for stored in db.scalars(stmt) if stored.message_id}
+    found = await db.scalars(stmt)
+    return {stored.message_id: stored for stored in found if stored.message_id}
 
 
-def collect_garbage(db: Session, limit: int = GC_BATCH_SIZE) -> list[str]:
+async def collect_garbage(db: AsyncSession, limit: int = GC_BATCH_SIZE) -> list[str]:
     """Удаляет строки файлов без владельца и возвращает их ключи: байты стирает вызывающий."""
     # SKIP LOCKED: не ждём строки, которые прямо сейчас привязывают или удаляют
     garbage = (
@@ -276,4 +277,4 @@ def collect_garbage(db: Session, limit: int = GC_BATCH_SIZE) -> list[str]:
         .returning(StoredFile.storage_key)
         .execution_options(synchronize_session=False)
     )
-    return list(db.scalars(stmt))
+    return list(await db.scalars(stmt))

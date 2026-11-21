@@ -321,7 +321,7 @@ async def test_failed_creation_leaves_no_copies(
     async def attach_to_rival() -> None:
         async with async_session_factory() as other, other.begin():
             rival_note = await notes_service.get_note_by_slug(other, rival["slug"])
-            await other.run_sync(files_service.attach_to_note, rival_note.id, [file_id])
+            await files_service.attach_to_note(other, rival_note.id, [file_id])
 
     def rival_attaches_meanwhile(*args):
         encrypted = original(*args)

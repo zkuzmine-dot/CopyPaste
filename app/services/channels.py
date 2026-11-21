@@ -147,9 +147,8 @@ async def add_file_message(
     message = await _insert_message(
         db, participant, MessageKind.FILE, None, settings.CHANNEL_FILE_TTL_SECONDS
     )
-    # Сервис файлов пока синхронный — через мост run_sync
-    stored = await db.run_sync(
-        files_service.attach_to_message, message.id, public_id, uploaded_by_id=participant.id
+    stored = await files_service.attach_to_message(
+        db, message.id, public_id, uploaded_by_id=participant.id
     )
     await _touch(db, participant.channel_id)
     return message, stored

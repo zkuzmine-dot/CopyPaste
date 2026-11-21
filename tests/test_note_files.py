@@ -128,8 +128,8 @@ async def _expired(client, async_db) -> str:
 
 
 async def _from_channel(client, async_db) -> str:
-    channel_file = await async_db.run_sync(
-        files_service.create_upload,
+    channel_file = await files_service.create_upload(
+        async_db,
         storage_key=new_storage_key(),
         name="a.txt",
         content_type="application/octet-stream",

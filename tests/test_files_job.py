@@ -15,8 +15,8 @@ pytestmark = pytest.mark.anyio
 
 
 async def expired_file(async_db, storage_key: str) -> None:
-    stored = await async_db.run_sync(
-        files_service.create_upload,
+    stored = await files_service.create_upload(
+        async_db,
         storage_key=storage_key,
         name="a.txt",
         content_type="application/octet-stream",
@@ -84,8 +84,8 @@ def blob(file_storage, *, old: bool, key: str | None = None):
 async def test_disk_sweep(async_db, async_session_factory, file_storage):
     recorded_key = new_storage_key()
     recorded = blob(file_storage, old=True, key=recorded_key)
-    await async_db.run_sync(
-        files_service.create_upload,
+    await files_service.create_upload(
+        async_db,
         storage_key=recorded_key,
         name="a.txt",
         content_type="application/octet-stream",
@@ -115,8 +115,8 @@ async def test_disk_sweep_in_batches(async_db, async_session_factory, file_stora
     monkeypatch.setattr(files_job, "SWEEP_BATCH_SIZE", 2)
     recorded_key = new_storage_key()
     blob(file_storage, old=True, key=recorded_key)
-    await async_db.run_sync(
-        files_service.create_upload,
+    await files_service.create_upload(
+        async_db,
         storage_key=recorded_key,
         name="a.txt",
         content_type="application/octet-stream",

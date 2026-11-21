@@ -13,7 +13,7 @@ from blockbuster import blockbuster_ctx
 from httpx2.websockets import ASGIWebSocketTransport
 from sqlalchemy import URL, create_engine, event, make_url, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import ORMExecuteState, Session, sessionmaker
+from sqlalchemy.orm import ORMExecuteState, Session
 
 from app.api.files.routes import create_upload_rate_limiter
 from app.db.redis import create_redis
@@ -79,34 +79,9 @@ def alembic_config(url: URL) -> Config:
 
 
 @pytest.fixture(scope="session")
-def engine():
+def test_database():
     recreate_database(TEST_DATABASE_URL)
     command.upgrade(alembic_config(TEST_DATABASE_URL), "head")
-    engine = create_engine(TEST_DATABASE_URL)
-    yield engine
-    engine.dispose()
-
-
-@pytest.fixture
-def connection(engine):
-    # Весь тест — одна внешняя транзакция, которая в конце откатывается:
-    # тесты не видят данные друг друга, а БД не нужно чистить
-    with engine.connect() as connection:
-        transaction = connection.begin()
-        yield connection
-        transaction.rollback()
-
-
-@pytest.fixture
-def session_factory(connection):
-    # create_savepoint: commit/rollback сессии работают с SAVEPOINT, а не с внешней транзакцией
-    return sessionmaker(bind=connection, join_transaction_mode="create_savepoint")
-
-
-@pytest.fixture
-def db(session_factory):
-    with session_factory() as session:
-        yield session
 
 
 @pytest.fixture
@@ -185,8 +160,7 @@ def slow_loop_steps(request):
 
 
 @pytest.fixture(scope="session")
-async def async_engine(engine):
-    # После синхронной фикстуры engine: она пересоздаёт тестовую базу и применяет миграции
+async def async_engine(test_database):
     async_engine = create_async_engine(TEST_DATABASE_URL)
     yield async_engine
     await async_engine.dispose()
@@ -194,6 +168,8 @@ async def async_engine(engine):
 
 @pytest.fixture
 async def async_connection(async_engine):
+    # Весь тест — одна внешняя транзакция, которая в конце откатывается:
+    # тесты не видят данные друг друга, а БД не нужно чистить
     async with async_engine.connect() as connection:
         transaction = await connection.begin()
         yield connection
@@ -202,6 +178,7 @@ async def async_connection(async_engine):
 
 @pytest.fixture
 def async_session_factory(async_connection) -> async_sessionmaker[AsyncSession]:
+    # create_savepoint: commit/rollback сессии работают с SAVEPOINT, а не с внешней транзакцией
     return async_sessionmaker(
         bind=async_connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
     )

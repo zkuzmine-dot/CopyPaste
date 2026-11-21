@@ -27,7 +27,6 @@ async def live_messages_read(
     db: AsyncSession, channel: Channel, *, viewer_id: int
 ) -> list[MessageRead]:
     messages = await channels_service.get_live_messages(db, channel)
-    # Сервис файлов пока синхронный — через мост run_sync
-    files = await db.run_sync(files_service.files_of_messages, [m.id for m in messages])
+    files = await files_service.files_of_messages(db, [m.id for m in messages])
     # Ссылки на свой файл не выдаём: скачав его, отправитель удалил бы файл у получателя
     return [message_read(m, files.get(m.id), with_links=m.sender_id != viewer_id) for m in messages]

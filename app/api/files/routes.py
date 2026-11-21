@@ -6,7 +6,6 @@ import anyio
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from redis import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
@@ -92,8 +91,7 @@ async def receive_upload(
 
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
-    # Сервис файлов пока синхронный — через мост run_sync
-    used = await run_db(factory, lambda db: db.run_sync(files_service.total_size))
+    used = await run_db(factory, files_service.total_size)
     if used + (declared_size or 0) > settings.FILES_MAX_TOTAL_BYTES:
         raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, detail="Storage is full")
 
@@ -113,8 +111,8 @@ async def receive_upload(
     except ClientDisconnect:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Upload interrupted") from None
 
-    def record(db: Session) -> FileRead:
-        stored = files_service.create_upload(
+    async def record(db: AsyncSession) -> FileRead:
+        stored = await files_service.create_upload(
             db,
             storage_key=key,
             name=clean_filename(name),
@@ -128,7 +126,7 @@ async def receive_upload(
     try:
         if size == 0:
             raise _empty()
-        return await run_db(factory, lambda db: db.run_sync(record))
+        return await run_db(factory, record)
     except BaseException:
         # Без строки в БД эти байты никто не найдёт — стираем сразу
         with anyio.CancelScope(shield=True):
@@ -164,8 +162,8 @@ class _Download:
     chunk_size: int | None
 
 
-def _find_download(db: Session, public_id: str) -> _Download | None:
-    stored = files_service.get_available_file(db, public_id)
+async def _find_download(db: AsyncSession, public_id: str) -> _Download | None:
+    stored = await files_service.get_available_file(db, public_id)
     if stored is None:
         return None
     return _Download(
@@ -230,7 +228,7 @@ async def download_file(
     _check_link(public_id, exp, inline, sig, key_id)
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
-    found = await run_db(factory, lambda db: db.run_sync(_find_download, public_id))
+    found = await run_db(factory, lambda db: _find_download(db, public_id))
     # Подпись верная — файл точно был, значит, его уже получили или срок вышел
     if found is None:
         raise _gone()
@@ -279,9 +277,7 @@ async def confirm_received(request: Request, public_id: str, exp: int, sig: str)
     _check_link(public_id, exp, False, sig, None)
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
-    deleted = await run_db(
-        factory, lambda db: db.run_sync(files_service.delete_received, public_id)
-    )
+    deleted = await run_db(factory, lambda db: files_service.delete_received(db, public_id))
     if deleted is None:
         return
     await run_in_threadpool(storage.delete, deleted.storage_key)
