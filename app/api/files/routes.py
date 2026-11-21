@@ -5,7 +5,8 @@ from typing import Annotated
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from redis import Redis
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
@@ -89,7 +90,7 @@ async def receive_upload(
     if declared_size == 0:
         raise _empty()
 
-    factory: sessionmaker[Session] = request.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     used = await run_db(factory, files_service.total_size)
     if used + (declared_size or 0) > settings.FILES_MAX_TOTAL_BYTES:
@@ -226,7 +227,7 @@ async def download_file(
     key_id: str | None = None,
 ) -> Response:
     _check_link(public_id, exp, inline, sig, key_id)
-    factory: sessionmaker[Session] = request.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     found = await run_db(factory, lambda db: _find_download(db, public_id))
     # Подпись верная — файл точно был, значит, его уже получили или срок вышел
@@ -240,12 +241,17 @@ async def download_file(
         **SECURITY_HEADERS,
         "Content-Disposition": content_disposition(found.name, inline=inline),
     }
+    # Подготовка ответа трогает диск (stat, open), поэтому — в пуле потоков
     try:
         if found.encryption_nonce is None:
-            return storage.download(
-                found.storage_key, media_type=found.content_type, headers=headers
+            return await run_in_threadpool(
+                storage.download,
+                found.storage_key,
+                media_type=found.content_type,
+                headers=headers,
             )
-        return encrypted_download(
+        return await run_in_threadpool(
+            encrypted_download,
             storage,
             found.storage_key,
             await _file_cipher(request, found, public_id, key_id),
@@ -270,7 +276,7 @@ async def confirm_received(request: Request, public_id: str, exp: int, sig: str)
     # Только клиент знает, что получил файл: сервер видит лишь, что передал байты ядру,
     # а файл в несколько мегабайт целиком уходит в буферы сокетов ещё до обрыва связи
     _check_link(public_id, exp, False, sig, None)
-    factory: sessionmaker[Session] = request.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     deleted = await run_db(factory, lambda db: files_service.delete_received(db, public_id))
     if deleted is None:

@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
-from sqlalchemy.orm import Session, joinedload, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.interfaces import ORMOption
 
 from app.api.channels.presenters import live_messages_read, message_read
@@ -75,7 +76,7 @@ def _identify(db: Session, slug: str, token: str) -> Identity | CloseCode:
 
 
 async def _authenticate(
-    websocket: WebSocket, factory: sessionmaker[Session], slug: str
+    websocket: WebSocket, factory: async_sessionmaker[AsyncSession], slug: str
 ) -> Identity | None:
     try:
         async with asyncio.timeout(settings.WS_AUTH_TIMEOUT_SECONDS):
@@ -150,7 +151,7 @@ def _become_sender(db: Session, participant_id: int) -> None:
 
 
 async def _close_if_idle(
-    manager: ChannelManager, factory: sessionmaker[Session], slug: str, channel_id: int
+    manager: ChannelManager, factory: async_sessionmaker[AsyncSession], slug: str, channel_id: int
 ) -> float | None:
     seconds_left = await run_db(factory, lambda db: channels_service.close_if_idle(db, channel_id))
     if seconds_left is None:
@@ -159,7 +160,7 @@ async def _close_if_idle(
 
 
 async def _watch_idle(
-    manager: ChannelManager, factory: sessionmaker[Session], slug: str, channel_id: int
+    manager: ChannelManager, factory: async_sessionmaker[AsyncSession], slug: str, channel_id: int
 ) -> None:
     # Срок берём из last_activity_at в БД, поэтому таймер не нужно сбрасывать вручную
     while (seconds_left := await _close_if_idle(manager, factory, slug, channel_id)) is not None:
@@ -168,7 +169,7 @@ async def _watch_idle(
 
 @router.websocket("/ws/channels/{slug}")
 async def channel_ws(websocket: WebSocket, slug: str) -> None:
-    factory: sessionmaker[Session] = websocket.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = websocket.app.state.session_factory
     manager: ChannelManager = websocket.app.state.channel_manager
     await websocket.accept()
     try:
@@ -226,7 +227,7 @@ async def _handle_event(
     event: ClientEvent,
     connection: Connection,
     manager: ChannelManager,
-    factory: sessionmaker[Session],
+    factory: async_sessionmaker[AsyncSession],
     slug: str,
     me: int,
 ) -> None:

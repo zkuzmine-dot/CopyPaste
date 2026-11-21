@@ -1,5 +1,8 @@
 import logging
+import os
 import warnings
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 import httpx2
@@ -7,7 +10,6 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from blockbuster import blockbuster_ctx
-from fastapi.testclient import TestClient
 from httpx2.websockets import ASGIWebSocketTransport
 from sqlalchemy import URL, create_engine, event, make_url, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -121,29 +123,18 @@ def redis_client():
     client.close()
 
 
-@pytest.fixture
-def client(session_factory, file_storage, redis_client):
-    # Настоящий get_db берёт фабрику из app.state — подкладываем тестовую.
-    # lifespan не запускаем (TestClient без with), поэтому выставляем руками
-    app.state.session_factory = session_factory
-    app.state.file_storage = file_storage
-    app.state.upload_rate_limiter = create_upload_rate_limiter(redis_client)
-    app.state.redis = redis_client
-    yield TestClient(app)
-    del app.state.session_factory
-    del app.state.file_storage
-    del app.state.upload_rate_limiter
-    del app.state.redis
-
-
 # --- async: приложение и тест в одном цикле событий ---
+
+
+# Debug-режим asyncio сообщает о шагах цикла дольше 0,1 с и падает, если цикл трогают из
+# чужого потока. Но на каждый вызов в цикле он записывает стек, и на смонтированной папке
+# Windows тесты идут вдвое дольше — поэтому по желанию: docker compose exec -e ASYNCIO_DEBUG=1
+ASYNCIO_DEBUG = os.environ.get("ASYNCIO_DEBUG") == "1"
 
 
 @pytest.fixture(scope="session")
 def anyio_backend():
-    # debug: asyncio сообщает о шагах цикла дольше 0,1 с и падает, если цикл трогают из
-    # чужого потока
-    return "asyncio", {"debug": True}
+    return "asyncio", {"debug": ASYNCIO_DEBUG}
 
 
 def _is_async_test(request: pytest.FixtureRequest) -> bool:
@@ -222,15 +213,15 @@ async def async_db(async_session_factory):
         yield session
 
 
-@pytest.fixture
-async def async_client(session_factory, async_session_factory, file_storage, redis_client):
+@asynccontextmanager
+async def _serving(
+    session_factory, file_storage, redis_client
+) -> AsyncIterator[httpx2.AsyncClient]:
     # Приложение работает в цикле событий теста, поэтому ему подходят async-соединения
     # из фикстур. ASGIWebSocketTransport обслуживает и HTTP, и WebSocket. lifespan не
     # запускаем — состояние выставляем руками
     state = {
-        # Пока приложение ходит в БД синхронно — через эту фабрику, в пуле потоков
         "session_factory": session_factory,
-        "async_session_factory": async_session_factory,
         "file_storage": file_storage,
         "upload_rate_limiter": create_upload_rate_limiter(redis_client),
         "redis": redis_client,
@@ -238,8 +229,38 @@ async def async_client(session_factory, async_session_factory, file_storage, red
     }
     for name, value in state.items():
         setattr(app.state, name, value)
-    transport = ASGIWebSocketTransport(app)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://test") as client:
+    try:
+        transport = ASGIWebSocketTransport(app)
+        async with httpx2.AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+    finally:
+        for name in state:
+            delattr(app.state, name)
+
+
+@pytest.fixture
+async def client(async_session_factory, file_storage, redis_client):
+    async with _serving(async_session_factory, file_storage, redis_client) as client:
         yield client
-    for name in state:
-        delattr(app.state, name)
+
+
+TABLES = ("notes", "channels", "participants", "messages", "stored_files")
+
+
+@pytest.fixture
+async def committing_session_factory(async_engine):
+    """Настоящие коммиты: у каждой сессии своё соединение из пула.
+
+    Нужно, когда приложение ходит в БД параллельно — WebSocket и таймер бездействия, гонки,
+    одновременные запросы: одно тестовое соединение так не умеет. Данные видны всем
+    соединениям, поэтому после теста таблицы очищаются.
+    """
+    yield async_sessionmaker(async_engine, expire_on_commit=False)
+    async with async_engine.begin() as connection:
+        await connection.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture
+async def committing_client(committing_session_factory, file_storage, redis_client):
+    async with _serving(committing_session_factory, file_storage, redis_client) as client:
+        yield client

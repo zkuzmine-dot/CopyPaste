@@ -7,9 +7,10 @@ from httpx2.websockets import WebSocketDisconnect
 from sqlalchemy import func, select, text
 
 from app.api.files import routes as files_routes
+from app.api.notes import routes as notes_routes
 from app.db.models.note import Note
-from app.services import notes as notes_service
-from tests.conftest import TEST_DATABASE_URL
+from app.services import files as files_service
+from tests.conftest import ASYNCIO_DEBUG, TEST_DATABASE_URL
 
 pytestmark = pytest.mark.anyio
 
@@ -27,7 +28,7 @@ async def test_session_commit_keeps_outer_transaction(async_db, async_connection
     assert await async_db.scalar(select(func.count()).select_from(Note)) == 1
 
 
-async def test_blocking_call_from_app_in_loop_fails(async_client, monkeypatch):
+async def test_blocking_call_from_app_in_loop_fails(client, monkeypatch):
     # Ручка скачивания — async: всё, что она вызывает, выполняется в цикле событий
     def slow_check(*args):
         time.sleep(0.01)
@@ -35,17 +36,34 @@ async def test_blocking_call_from_app_in_loop_fails(async_client, monkeypatch):
     monkeypatch.setattr(files_routes, "_check_link", slow_check)
 
     with pytest.raises(BlockingError, match="sleep"):
-        await async_client.get("/api/files/abc", params={"exp": 1, "sig": "x"})
+        await client.get("/api/files/abc", params={"exp": 1, "sig": "x"})
 
 
-async def test_blocking_call_in_worker_thread_is_allowed(async_client, monkeypatch):
-    # Синхронная ручка выполняется в пуле потоков — там блокироваться можно
-    def slow_lookup(db, slug):
+async def test_blocking_call_in_bridged_service_fails(client, monkeypatch):
+    # Синхронный сервис через run_sync работает в том же цикле событий, а не в потоке:
+    # блокироваться в нём нельзя. attach_to_note вызывает код сервиса notes — его кадр в стеке
+    original = files_service.attach_to_note
+
+    def slow_attach(*args):
         time.sleep(0.01)
+        return original(*args)
 
-    monkeypatch.setattr(notes_service, "get_note_by_slug", slow_lookup)
+    monkeypatch.setattr(files_service, "attach_to_note", slow_attach)
 
-    assert (await async_client.get("/api/notes/zzzzzzzz")).status_code == 404
+    with pytest.raises(BlockingError, match="sleep"):
+        await client.post("/api/notes", json={"text": "hello"})
+
+
+async def test_blocking_call_in_worker_thread_is_allowed(client, monkeypatch):
+    # QR строится в пуле потоков — там блокироваться можно
+    def slow_qr(url):
+        time.sleep(0.01)
+        return "<svg/>"
+
+    monkeypatch.setattr(notes_routes, "make_qr_svg", slow_qr)
+    slug = (await client.post("/api/notes", json={"text": "hello"})).json()["slug"]
+
+    assert (await client.get(f"/api/notes/{slug}/qr")).text == "<svg/>"
 
 
 async def test_test_code_may_block():
@@ -53,10 +71,10 @@ async def test_test_code_may_block():
     time.sleep(0.001)
 
 
-async def test_websocket_in_test_loop(async_client):
-    created = (await async_client.post("/api/channels")).json()
+async def test_websocket_in_test_loop(client):
+    created = (await client.post("/api/channels")).json()
 
-    async with async_client.websocket(f"/ws/channels/{created['slug']}") as ws:
+    async with client.websocket(f"/ws/channels/{created['slug']}") as ws:
         await ws.send_json({"type": "auth", "token": "wrong"})
         with pytest.raises(WebSocketDisconnect) as closed:
             await ws.receive_json()
@@ -64,6 +82,7 @@ async def test_websocket_in_test_loop(async_client):
     assert closed.value.code == 4401
 
 
+@pytest.mark.skipif(not ASYNCIO_DEBUG, reason="только с ASYNCIO_DEBUG=1")
 async def test_slow_loop_step_is_reported(slow_loop_steps):
     time.sleep(0.15)
     await anyio.sleep(0)

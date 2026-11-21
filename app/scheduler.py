@@ -1,7 +1,8 @@
+import asyncio
 import logging
 import signal
 
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.db.connection import create_db_engine, create_session_factory
 from app.jobs.cleanup import run_channels_cleanup, run_cleanup
@@ -12,17 +13,14 @@ from app.storage.local import LocalFileStorage
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
-
+async def main() -> None:
     engine = create_db_engine()
     session_factory = create_session_factory(engine)
 
     storage = LocalFileStorage(settings.FILES_DIR)
 
-    scheduler = BlockingScheduler(timezone="UTC")
+    # Задачи — корутины: AsyncIOScheduler запускает их в этом же цикле событий
+    scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
         run_cleanup,
         "interval",
@@ -61,8 +59,12 @@ def main() -> None:
     )
 
     # docker stop шлёт SIGTERM: останавливаемся сразу
-    signal.signal(signal.SIGTERM, lambda *_: scheduler.shutdown(wait=False))
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop.set)
 
+    scheduler.start()
     logger.info(
         "Scheduler started: notes cleanup every %d s, channels cleanup every %d s, "
         "files cleanup every %d s, disk sweep every %d s",
@@ -72,13 +74,15 @@ def main() -> None:
         settings.FILES_DISK_SWEEP_INTERVAL_SECONDS,
     )
     try:
-        scheduler.start()
-    except KeyboardInterrupt:
-        pass
+        await stop.wait()
     finally:
-        engine.dispose()
+        scheduler.shutdown(wait=False)
+        await engine.dispose()
         logger.info("Scheduler stopped")
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    asyncio.run(main())

@@ -2,9 +2,9 @@ import io
 import math
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
+import anyio
 import pytest
 
 from app.settings import Settings, settings
@@ -180,17 +180,20 @@ def test_default_params_work(monkeypatch):
 # --- предел одновременных вычислений ---
 
 
-def test_concurrent_kdf_is_limited(monkeypatch):
-    monkeypatch.setattr(crypto, "_kdf_slots", threading.BoundedSemaphore(2))
+@pytest.mark.anyio
+async def test_concurrent_kdf_is_limited(monkeypatch):
+    monkeypatch.setattr(crypto, "_kdf_limiter", anyio.CapacityLimiter(2))
     active = 0
     max_active = 0
     lock = threading.Lock()
+    threads = set()
 
     def slow_hash(**kwargs) -> bytes:
         nonlocal active, max_active
         with lock:
             active += 1
             max_active = max(max_active, active)
+            threads.add(threading.current_thread())
         time.sleep(0.1)
         with lock:
             active -= 1
@@ -199,10 +202,13 @@ def test_concurrent_kdf_is_limited(monkeypatch):
     monkeypatch.setattr(crypto, "hash_secret_raw", slow_hash)
     params = crypto.new_kdf_params()
 
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        list(pool.map(lambda _: derive_key(PASSWORD, params), range(6)))
+    async with anyio.create_task_group() as group:
+        for _ in range(6):
+            group.start_soon(crypto.in_kdf_thread, derive_key, PASSWORD, params)
 
+    # Не больше двух сразу — и не в цикле событий: в его потоке нельзя считать Argon2
     assert max_active == 2
+    assert threading.main_thread() not in threads
 
 
 def test_unlock_returns_key_of_the_note():

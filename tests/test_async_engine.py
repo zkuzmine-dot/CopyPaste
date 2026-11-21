@@ -6,7 +6,7 @@ from app.main import app
 
 def test_lifespan_creates_async_sessions():
     with TestClient(app) as client:
-        factory = app.state.async_session_factory
+        factory = app.state.session_factory
 
         async def select_one() -> int | None:
             async with factory() as db:

@@ -12,8 +12,8 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def slug(async_client) -> str:
-    return (await async_client.post(URL, json={"text": "hello"})).json()["slug"]
+async def slug(client) -> str:
+    return (await client.post(URL, json={"text": "hello"})).json()["slug"]
 
 
 def test_make_qr_svg():
@@ -25,8 +25,8 @@ def test_make_qr_svg():
     assert svg.rstrip().endswith("</svg>")
 
 
-async def test_note_qr(async_client, slug):
-    response = await async_client.get(f"{URL}/{slug}/qr")
+async def test_note_qr(client, slug):
+    response = await client.get(f"{URL}/{slug}/qr")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/svg+xml"
@@ -34,17 +34,17 @@ async def test_note_qr(async_client, slug):
     assert response.text == make_qr_svg(f"http://test/n/{slug}")
 
 
-async def test_note_qr_unknown_slug(async_client):
-    response = await async_client.get(f"{URL}/zzzzzzzz/qr")
+async def test_note_qr_unknown_slug(client):
+    response = await client.get(f"{URL}/zzzzzzzz/qr")
 
     assert response.status_code == 404
 
 
-async def test_note_qr_expired(async_client, connection, slug):
-    connection.execute(
+async def test_note_qr_expired(client, async_connection, slug):
+    await async_connection.execute(
         update(Note).where(Note.slug == slug).values(expires_at=func.now() - timedelta(seconds=1))
     )
 
-    response = await async_client.get(f"{URL}/{slug}/qr")
+    response = await client.get(f"{URL}/{slug}/qr")
 
     assert response.status_code == 404

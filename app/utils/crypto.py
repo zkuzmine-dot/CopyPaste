@@ -6,12 +6,12 @@ DEK шифрует текст и файлы. В БД — только соль �
 
 import math
 import os
-import threading
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
+import anyio
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -24,8 +24,14 @@ NONCE_BYTES = 12
 TAG_BYTES = 16
 
 # Каждое вычисление Argon2 занимает KDF_MEMORY_KIB памяти: без предела одновременные
-# попытки подбора съели бы память сервера
-_kdf_slots = threading.BoundedSemaphore(settings.KDF_MAX_CONCURRENT)
+# попытки подбора съели бы память сервера. Предел — на входе в поток: очередь ждёт в цикле
+# событий и, в отличие от семафора внутри потока, не держит потоки пула
+_kdf_limiter = anyio.CapacityLimiter(settings.KDF_MAX_CONCURRENT)
+
+
+async def in_kdf_thread[T](fn: Callable[..., T], *args: Any) -> T:
+    """Вызов с Argon2 внутри: ~0,1 с процессора не должны останавливать цикл событий."""
+    return await anyio.to_thread.run_sync(fn, *args, limiter=_kdf_limiter)
 
 
 class DecryptionError(Exception):
@@ -60,16 +66,15 @@ def new_kdf_params() -> KdfParams:
 def derive_key(password: str, params: KdfParams) -> bytes:
     # NFC: «й» одним символом и «и» + кратка — один и тот же пароль
     secret = unicodedata.normalize("NFC", password).encode()
-    with _kdf_slots:
-        return hash_secret_raw(
-            secret=secret,
-            salt=params.salt,
-            time_cost=params.time_cost,
-            memory_cost=params.memory_kib,
-            parallelism=params.parallelism,
-            hash_len=KEY_BYTES,
-            type=Type.ID,
-        )
+    return hash_secret_raw(
+        secret=secret,
+        salt=params.salt,
+        time_cost=params.time_cost,
+        memory_cost=params.memory_kib,
+        parallelism=params.parallelism,
+        hash_len=KEY_BYTES,
+        type=Type.ID,
+    )
 
 
 def encrypt(key: bytes, plaintext: bytes, aad: bytes) -> bytes:

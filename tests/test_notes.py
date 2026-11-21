@@ -7,6 +7,8 @@ from app.db.models.note import Note
 from app.schemas.note import NOTE_TEXT_MAX_LENGTH
 from app.utils.slug import SLUG_ALPHABET, SLUG_LENGTH
 
+pytestmark = pytest.mark.anyio
+
 URL = "/api/notes"
 
 
@@ -15,15 +17,15 @@ def future(hours: int = 1) -> str:
 
 
 @pytest.fixture
-def note(client) -> dict:
-    response = client.post(URL, json={"text": "hello"})
+async def note(client) -> dict:
+    response = await client.post(URL, json={"text": "hello"})
     assert response.status_code == 201
     return response.json()
 
 
-def expire(connection, slug: str) -> None:
+async def expire(async_connection, slug: str) -> None:
     # Через API прошлый expires_at не задать (422), поэтому правим строку напрямую
-    connection.execute(
+    await async_connection.execute(
         update(Note).where(Note.slug == slug).values(expires_at=func.now() - timedelta(seconds=1))
     )
 
@@ -31,8 +33,8 @@ def expire(connection, slug: str) -> None:
 # --- POST ---
 
 
-def test_create_note(client):
-    response = client.post(URL, json={"text": "hello"})
+async def test_create_note(client):
+    response = await client.post(URL, json={"text": "hello"})
 
     assert response.status_code == 201
     body = response.json()
@@ -43,10 +45,10 @@ def test_create_note(client):
     assert "id" not in body
 
 
-def test_create_note_with_expires_at(client):
+async def test_create_note_with_expires_at(client):
     expires_at = future()
 
-    response = client.post(URL, json={"text": "hello", "expires_at": expires_at})
+    response = await client.post(URL, json={"text": "hello", "expires_at": expires_at})
 
     assert response.status_code == 201
     assert datetime.fromisoformat(response.json()["expires_at"]) == datetime.fromisoformat(
@@ -54,8 +56,8 @@ def test_create_note_with_expires_at(client):
     )
 
 
-def test_create_note_max_length(client):
-    response = client.post(URL, json={"text": "a" * NOTE_TEXT_MAX_LENGTH})
+async def test_create_note_max_length(client):
+    response = await client.post(URL, json={"text": "a" * NOTE_TEXT_MAX_LENGTH})
 
     assert response.status_code == 201
 
@@ -63,8 +65,8 @@ def test_create_note_max_length(client):
 # --- GET ---
 
 
-def test_get_note(client, note):
-    response = client.get(f"{URL}/{note['slug']}")
+async def test_get_note(client, note):
+    response = await client.get(f"{URL}/{note['slug']}")
 
     assert response.status_code == 200
     assert response.json() == note
@@ -73,26 +75,26 @@ def test_get_note(client, note):
 # --- PUT ---
 
 
-def test_update_text(client, note):
-    response = client.put(f"{URL}/{note['slug']}", json={"text": "updated"})
+async def test_update_text(client, note):
+    response = await client.put(f"{URL}/{note['slug']}", json={"text": "updated"})
 
     assert response.status_code == 200
     assert response.json()["text"] == "updated"
-    assert client.get(f"{URL}/{note['slug']}").json()["text"] == "updated"
+    assert (await client.get(f"{URL}/{note['slug']}")).json()["text"] == "updated"
 
 
-def test_update_only_expires_at_keeps_text(client, note):
-    response = client.put(f"{URL}/{note['slug']}", json={"expires_at": future()})
+async def test_update_only_expires_at_keeps_text(client, note):
+    response = await client.put(f"{URL}/{note['slug']}", json={"expires_at": future()})
 
     assert response.status_code == 200
     assert response.json()["text"] == "hello"
     assert response.json()["expires_at"] is not None
 
 
-def test_update_expires_at_null_removes_expiry(client):
-    slug = client.post(URL, json={"text": "hello", "expires_at": future()}).json()["slug"]
+async def test_update_expires_at_null_removes_expiry(client):
+    slug = (await client.post(URL, json={"text": "hello", "expires_at": future()})).json()["slug"]
 
-    response = client.put(f"{URL}/{slug}", json={"expires_at": None})
+    response = await client.put(f"{URL}/{slug}", json={"expires_at": None})
 
     assert response.status_code == 200
     assert response.json()["expires_at"] is None
@@ -101,11 +103,11 @@ def test_update_expires_at_null_removes_expiry(client):
 # --- DELETE ---
 
 
-def test_delete_note(client, note):
-    response = client.delete(f"{URL}/{note['slug']}")
+async def test_delete_note(client, note):
+    response = await client.delete(f"{URL}/{note['slug']}")
 
     assert response.status_code == 204
-    assert client.get(f"{URL}/{note['slug']}").status_code == 404
+    assert (await client.get(f"{URL}/{note['slug']}")).status_code == 404
 
 
 # --- 404 ---
@@ -115,10 +117,10 @@ def test_delete_note(client, note):
     ("method", "body"),
     [("get", None), ("put", {"text": "x"}), ("delete", None)],
 )
-def test_unknown_slug_returns_404(client, method, body):
+async def test_unknown_slug_returns_404(client, method, body):
     kwargs = {"json": body} if body else {}
 
-    response = client.request(method, f"{URL}/zzzzzzzz", **kwargs)
+    response = await client.request(method, f"{URL}/zzzzzzzz", **kwargs)
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Note not found"}
@@ -128,11 +130,11 @@ def test_unknown_slug_returns_404(client, method, body):
     ("method", "body"),
     [("get", None), ("put", {"text": "x"}), ("delete", None)],
 )
-def test_expired_note_returns_404(client, connection, note, method, body):
-    expire(connection, note["slug"])
+async def test_expired_note_returns_404(client, async_connection, note, method, body):
+    await expire(async_connection, note["slug"])
     kwargs = {"json": body} if body else {}
 
-    response = client.request(method, f"{URL}/{note['slug']}", **kwargs)
+    response = await client.request(method, f"{URL}/{note['slug']}", **kwargs)
 
     assert response.status_code == 404
 
@@ -140,14 +142,16 @@ def test_expired_note_returns_404(client, connection, note, method, body):
 # --- 422 ---
 
 
-def test_create_too_long_text(client):
-    response = client.post(URL, json={"text": "a" * (NOTE_TEXT_MAX_LENGTH + 1)})
+async def test_create_too_long_text(client):
+    response = await client.post(URL, json={"text": "a" * (NOTE_TEXT_MAX_LENGTH + 1)})
 
     assert response.status_code == 422
 
 
-def test_update_too_long_text(client, note):
-    response = client.put(f"{URL}/{note['slug']}", json={"text": "a" * (NOTE_TEXT_MAX_LENGTH + 1)})
+async def test_update_too_long_text(client, note):
+    response = await client.put(
+        f"{URL}/{note['slug']}", json={"text": "a" * (NOTE_TEXT_MAX_LENGTH + 1)}
+    )
 
     assert response.status_code == 422
 
@@ -171,8 +175,8 @@ def test_update_too_long_text(client, note):
         "expires-garbage",
     ],
 )
-def test_create_invalid_body(client, body):
-    response = client.post(URL, json=body)
+async def test_create_invalid_body(client, body):
+    response = await client.post(URL, json=body)
 
     assert response.status_code == 422
 
@@ -186,7 +190,7 @@ def test_create_invalid_body(client, body):
     ],
     ids=["text-null", "empty-text", "expires-in-past"],
 )
-def test_update_invalid_body(client, note, body):
-    response = client.put(f"{URL}/{note['slug']}", json=body)
+async def test_update_invalid_body(client, note, body):
+    response = await client.put(f"{URL}/{note['slug']}", json=body)
 
     assert response.status_code == 422
