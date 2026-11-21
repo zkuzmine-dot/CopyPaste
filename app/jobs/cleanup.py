@@ -22,8 +22,8 @@ async def run_channels_cleanup(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> tuple[int, int]:
     async with session_factory() as db, db.begin():
-        messages = await db.run_sync(channels_service.delete_expired_messages)
-        channels = await db.run_sync(channels_service.delete_inactive_channels)
+        messages = await channels_service.delete_expired_messages(db)
+        channels = await channels_service.delete_inactive_channels(db)
     logger.log(
         logging.INFO if messages or channels else logging.DEBUG,
         "Deleted %d expired messages and %d inactive channels",

@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import Session
 
 from app.settings import settings
 
@@ -44,12 +43,13 @@ async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
 DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
 
 
-async def run_db[T](factory: async_sessionmaker[AsyncSession], fn: Callable[[Session], T]) -> T:
-    """Короткая транзакция для синхронной функции сервиса.
+async def run_db[T](
+    factory: async_sessionmaker[AsyncSession], fn: Callable[[AsyncSession], Awaitable[T]]
+) -> T:
+    """Короткая транзакция: commit, если fn завершилась, rollback, если упала.
 
-    run_sync выполняет fn в том же цикле событий, а её запросы идут через async-соединение —
-    поток не занимается. Для кода, который не держит DbSession всё время запроса: WebSocket,
-    загрузка и скачивание файлов. fn возвращает готовые данные: связи не догружаются сами.
+    Для кода, который не держит DbSession всё время запроса: WebSocket, загрузка и
+    скачивание файлов. fn возвращает готовые данные: связи не догружаются сами.
     """
     async with factory() as db, db.begin():
-        return await db.run_sync(fn)
+        return await fn(db)

@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.api.channels.presenters import live_messages_read
@@ -20,9 +19,8 @@ router = APIRouter(prefix="/api/channels", tags=["channels"])
 ParticipantToken = Annotated[str | None, Header(alias="X-Participant-Token")]
 
 
-def _active_channel(db: Session, slug: str) -> Channel:
-    # Синхронная: её вызывают и через run_sync, и из _sender_id внутри run_db
-    channel = channels_service.get_active_channel(db, slug)
+async def _active_channel(db: AsyncSession, slug: str) -> Channel:
+    channel = await channels_service.get_active_channel(db, slug)
     if channel is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
     return channel
@@ -30,7 +28,7 @@ def _active_channel(db: Session, slug: str) -> Channel:
 
 @router.post("", response_model=ChannelCreated, status_code=status.HTTP_201_CREATED)
 async def create_channel(db: DbSession) -> ChannelCreated:
-    participant, token = await db.run_sync(channels_service.create_channel)
+    participant, token = await channels_service.create_channel(db)
     # Канал присвоен участнику при создании — он уже в объекте, запроса здесь нет
     return ChannelCreated(slug=participant.channel.slug, token=token, role=participant.role)
 
@@ -43,7 +41,7 @@ async def create_channel(db: DbSession) -> ChannelCreated:
 )
 async def join_channel(slug: str, db: DbSession) -> ChannelJoined:
     try:
-        participant, token = await db.run_sync(channels_service.join_channel, slug)
+        participant, token = await channels_service.join_channel(db, slug)
     except channels_service.ChannelNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Channel not found") from None
     except channels_service.ChannelFullError:
@@ -59,20 +57,16 @@ async def join_channel(slug: str, db: DbSession) -> ChannelJoined:
 async def get_channel_state(
     slug: str, db: DbSession, token: ParticipantToken = None
 ) -> ChannelState:
-    return await db.run_sync(_channel_state, slug, token)
-
-
-def _channel_state(db: Session, slug: str, token: str | None) -> ChannelState:
-    channel = _active_channel(db, slug)
-    participant = channels_service.get_participant(db, channel, token) if token else None
+    channel = await _active_channel(db, slug)
+    participant = await channels_service.get_participant(db, channel, token) if token else None
     if participant is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid participant token")
+    participants = await channels_service.count_participants(db, channel)
     return ChannelState(
         slug=channel.slug,
         role=participant.role,
-        peer_joined=channels_service.count_participants(db, channel)
-        == channels_service.MAX_PARTICIPANTS,
-        messages=live_messages_read(db, channel, viewer_id=participant.id),
+        peer_joined=participants == channels_service.MAX_PARTICIPANTS,
+        messages=await live_messages_read(db, channel, viewer_id=participant.id),
     )
 
 
@@ -82,14 +76,14 @@ def _channel_state(db: Session, slug: str, token: str | None) -> ChannelState:
     responses={200: {"content": {"image/svg+xml": {}}, "description": "QR-код со ссылкой"}},
 )
 async def channel_qr(slug: str, request: Request, db: DbSession) -> Response:
-    channel = await db.run_sync(_active_channel, slug)
+    channel = await _active_channel(db, slug)
     url = str(request.url_for("channel_page", slug=channel.slug))
     return Response(await run_in_threadpool(make_qr_svg, url), media_type="image/svg+xml")
 
 
-def _sender_id(db: Session, slug: str, token: str | None) -> int:
-    channel = _active_channel(db, slug)
-    participant = channels_service.get_participant(db, channel, token) if token else None
+async def _sender_id(db: AsyncSession, slug: str, token: str | None) -> int:
+    channel = await _active_channel(db, slug)
+    participant = await channels_service.get_participant(db, channel, token) if token else None
     if participant is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid participant token")
     if participant.role != ParticipantRole.SENDER:

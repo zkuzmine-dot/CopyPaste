@@ -298,8 +298,8 @@ async def test_events_during_state_load_come_after_state(client, channel, monkey
     original_run_db = channels_ws.run_db
     delayed = False
 
-    def load_state(db, participant_id):
-        result = original_load_state(db, participant_id)
+    async def load_state(db, participant_id):
+        result = await original_load_state(db, participant_id)
         state_loaded.set()
         return result
 
@@ -373,9 +373,9 @@ async def test_channel_deleted_by_cleanup_closes_on_next_action(client, channel,
     async with connect(client, channel["slug"]) as sender:
         await auth(sender, channel["sender"])
         async with factory() as db, db.begin():
-            active = await db.run_sync(channels_service.get_active_channel, channel["slug"])
-            await db.run_sync(channels_service.close_channel, active)
-            assert await db.run_sync(channels_service.delete_inactive_channels) == 1
+            active = await channels_service.get_active_channel(db, channel["slug"])
+            await channels_service.close_channel(db, active)
+            assert await channels_service.delete_inactive_channels(db) == 1
 
         await sender.send_json({"type": "send", "text": "в пустоту"})
         assert await sender.receive_json() == {"type": "channel_closed", "reason": "idle"}

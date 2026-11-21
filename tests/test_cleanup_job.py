@@ -12,12 +12,12 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_run_channels_cleanup(async_db, async_session_factory):
-    receiver, _ = await async_db.run_sync(channels_service.create_channel)
-    sender, _ = await async_db.run_sync(channels_service.join_channel, receiver.channel.slug)
-    message_id = (await async_db.run_sync(channels_service.add_message, sender, "text")).id
+    receiver, _ = await channels_service.create_channel(async_db)
+    sender, _ = await channels_service.join_channel(async_db, receiver.channel.slug)
+    message_id = (await channels_service.add_message(async_db, sender, "text")).id
     kept_channel_id = receiver.channel_id
     await async_db.execute(update(Message).values(expires_at=func.now() - timedelta(seconds=1)))
-    idle, _ = await async_db.run_sync(channels_service.create_channel)
+    idle, _ = await channels_service.create_channel(async_db)
     await async_db.execute(
         update(Channel)
         .where(Channel.id == idle.channel_id)

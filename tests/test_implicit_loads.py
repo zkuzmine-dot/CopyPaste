@@ -33,15 +33,17 @@ def test_explicit_refresh_is_allowed(db):
     assert note.text == "hello"
 
 
-def test_participant_channel_is_never_lazy_loaded(db):
-    created, _ = channels_service.create_channel(db)
+@pytest.mark.anyio
+async def test_participant_channel_is_never_lazy_loaded(async_db):
+    created, _ = await channels_service.create_channel(async_db)
     participant_id = created.id
-    db.expunge_all()
+    async_db.expunge_all()
 
-    participant = db.get(Participant, participant_id)
+    participant = await async_db.get(Participant, participant_id)
     with pytest.raises(InvalidRequestError, match="lazy='raise'"):
         _ = participant.channel
 
-    db.expunge_all()
-    loaded = db.get(Participant, participant_id, options=[joinedload(Participant.channel)])
+    async_db.expunge_all()
+    options = [joinedload(Participant.channel)]
+    loaded = await async_db.get(Participant, participant_id, options=options)
     assert loaded.channel.id == loaded.channel_id

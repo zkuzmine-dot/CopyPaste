@@ -277,8 +277,8 @@ async def test_expired_file_message_is_collected(client, channel, factory, file_
 async def test_deleted_channel_files_are_collected(client, channel, factory, file_storage):
     link = await send_and_get_link(client, channel)
     async with factory() as db, db.begin():
-        active = await db.run_sync(channels_service.get_active_channel, channel["slug"])
-        await db.run_sync(channels_service.close_channel, active)
+        active = await channels_service.get_active_channel(db, channel["slug"])
+        await channels_service.close_channel(db, active)
 
     assert await run_channels_cleanup(factory) == (0, 1)
     assert await run_files_gc(factory, file_storage) == 1

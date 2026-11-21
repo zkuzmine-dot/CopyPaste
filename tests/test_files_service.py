@@ -48,9 +48,9 @@ async def note(async_db):
 
 @pytest.fixture
 async def message(async_db):
-    receiver, _ = await async_db.run_sync(channels_service.create_channel)
-    sender, _ = await async_db.run_sync(channels_service.join_channel, receiver.channel.slug)
-    return await async_db.run_sync(channels_service.add_message, sender, "hi")
+    receiver, _ = await channels_service.create_channel(async_db)
+    sender, _ = await channels_service.join_channel(async_db, receiver.channel.slug)
+    return await channels_service.add_message(async_db, sender, "hi")
 
 
 # --- создание и поиск ---
