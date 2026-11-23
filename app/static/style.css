@@ -147,7 +147,11 @@
   display: none !important;
 }
 
+/* Колонкой: на короткой странице подвал стоит у нижнего края экрана, а не посередине */
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -189,13 +193,14 @@ a:hover {
 }
 
 .page {
-  max-width: 800px;
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: 960px;
   margin: 0 auto;
   padding: 24px 24px 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-height: calc(100vh - 57px);
 }
 
 .header {
@@ -203,7 +208,7 @@ a:hover {
 }
 
 .header-inner {
-  max-width: 800px;
+  max-width: 960px;
   height: 56px;
   margin: 0 auto;
   padding: 0 24px;
@@ -875,8 +880,10 @@ kbd {
     display: flex;
   }
 
-  /* Без нижнего отступа поле текста дотягивается до низа, и панель стоит у края экрана */
+  /* Редактор занимает весь экран, и панель стоит у его края: подвал уходит ниже прокрутки,
+     а без нижнего отступа поле текста дотягивается до панели */
   .page:has(#note-view:not([hidden]) #editor-area:not([hidden])) {
+    min-height: calc(100vh - 57px);
     padding-bottom: 0;
   }
 
@@ -1214,7 +1221,7 @@ kbd {
   letter-spacing: -0.01em;
 }
 
-.invite-steps {
+.steps {
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -1224,13 +1231,13 @@ kbd {
   counter-reset: step;
 }
 
-.invite-steps > li {
+.steps > li {
   display: flex;
   gap: 14px;
   counter-increment: step;
 }
 
-.invite-steps > li::before {
+.steps > li::before {
   content: counter(step);
   flex: none;
   width: 16px;
@@ -1391,4 +1398,127 @@ kbd {
     padding: 16px;
     gap: 20px;
   }
+}
+
+/* --- о сервисе --- */
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  padding-top: 16px;
+}
+
+.about-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 2px solid var(--primary);
+  scroll-margin-top: 16px;
+}
+
+.about-heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.about-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+}
+
+.about-column {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-subheading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.about-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 680px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.about-list li::marker {
+  color: var(--primary);
+}
+
+.faq {
+  display: flex;
+  flex-direction: column;
+  max-width: 680px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.faq-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.faq dt {
+  font-weight: 500;
+}
+
+.faq dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+/* --- подвал --- */
+
+.footer {
+  border-top: 1px solid var(--line);
+}
+
+.footer-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 24px 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  color: var(--text);
+  text-decoration: underline;
 }

@@ -215,7 +215,7 @@
         <img id="channel-qr" class="share-qr" alt="QR-код для второго устройства" width="200" height="200">
         <div class="invite-body">
           <h2 id="invite-title" class="invite-title">Подключите второе устройство</h2>
-          <ol class="invite-steps">
+          <ol class="steps">
             <li><div class="step">Отсканируйте QR-код камерой телефона.</div></li>
             <li>
               <div class="step">
@@ -275,8 +275,115 @@
       </div>
     </section>
 
+    <section id="about-view" class="about" aria-labelledby="about-title" hidden>
+      <h1 id="about-title" class="about-title">О сервисе</h1>
+
+      <section id="how" class="about-section" aria-labelledby="how-title">
+        <h2 id="how-title" class="about-heading">Как это работает</h2>
+        <div class="about-columns">
+          <div class="about-column">
+            <h3 class="about-subheading">Заметка</h3>
+            <ol class="steps">
+              <li><div class="step">Вставьте текст или перетащите файлы.</div></li>
+              <li><div class="step">Выберите срок и, если нужно, пароль.</div></li>
+              <li><div class="step">Сохраните, и ссылка скопируется сама.</div></li>
+              <li><div class="step">Откройте её на другом устройстве или по QR-коду.</div></li>
+            </ol>
+          </div>
+          <div class="about-column">
+            <h3 class="about-subheading">Канал</h3>
+            <ol class="steps">
+              <li><div class="step">Откройте канал.</div></li>
+              <li><div class="step">На втором устройстве отсканируйте QR-код или введите код.</div></li>
+              <li><div class="step">Отправитель шлёт текст и файлы, получатель видит их сразу.</div></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="security" class="about-section" aria-labelledby="security-title">
+        <h2 id="security-title" class="about-heading">Безопасность</h2>
+        <ul class="about-list">
+          <li>
+            Заметка с паролем шифруется ключом из пароля (Argon2id + AES-256-GCM). Сам пароль
+            не хранится.
+          </li>
+          <li>
+            После 5 неверных паролей заметка блокируется на минуту, после 10 с одного адреса ввод
+            замораживается на 15 минут.
+          </li>
+          <li>
+            Ссылки на файлы подписаны и действуют ограниченное время. Одноразовые файлы удаляются
+            после скачивания.
+          </li>
+          <li>
+            Превью есть только у PNG, JPEG, GIF и WebP. Остальные файлы всегда скачиваются, а не
+            открываются в браузере.
+          </li>
+          <li>
+            Это не сквозное шифрование: в момент сохранения и открытия текст проходит через
+            сервер.
+          </li>
+        </ul>
+      </section>
+
+      <section id="faq" class="about-section" aria-labelledby="faq-title">
+        <h2 id="faq-title" class="about-heading">Частые вопросы</h2>
+        <dl class="faq">
+          <div class="faq-item">
+            <dt>Нужна ли регистрация?</dt>
+            <dd>Нет.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Сколько хранится заметка?</dt>
+            <dd>
+              Сколько выберете: от 10 минут до недели или бессрочно. Одноразовая удаляется после
+              первого прочтения.
+            </dd>
+          </div>
+          <div class="faq-item">
+            <dt>Какие файлы можно прикрепить?</dt>
+            <dd>Любые, до 10 штук по 50 МБ.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Что если забыть пароль?</dt>
+            <dd>Заметку не открыть: пароль не хранится, а без него текст не расшифровать.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Почему ввод пароля заморозился?</dt>
+            <dd>Слишком много неверных попыток. Через минуту (или 15) можно снова.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Сколько устройств можно подключить к каналу?</dt>
+            <dd>Два: отправитель и получатель. Роли можно поменять.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Почему канал закрылся?</dt>
+            <dd>В нём 5 минут ничего не отправляли. Откройте новый.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Видит ли сервер мои данные?</dt>
+            <dd>Заметку без пароля сервер хранит как есть, а заметку с паролем хранит зашифрованной.</dd>
+          </div>
+        </dl>
+      </section>
+    </section>
+
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-brand">CopyPaste · 2026</span>
+      <nav class="footer-links" aria-label="О сервисе">
+        <a href="/about#how">Как это работает</a>
+        <a href="/about#security">Безопасность</a>
+        <a href="/about#faq">FAQ</a>
+        <a href="https://github.com/zkuzmine-dot/CopyPaste">GitHub</a>
+        <a href="/docs">API</a>
+      </nav>
+    </div>
+  </footer>
 
   <script src="/static/files.js"></script>
   <script src="/static/channel.js"></script>

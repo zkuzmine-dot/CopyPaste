@@ -26,6 +26,7 @@ const shareQrDownload = document.getElementById("share-qr-download");
 const homeViewEl = document.getElementById("home-view");
 const noteViewEl = document.getElementById("note-view");
 const channelViewEl = document.getElementById("channel-view");
+const aboutViewEl = document.getElementById("about-view");
 const navNoteEl = document.getElementById("nav-note");
 const navChannelEl = document.getElementById("nav-channel");
 const attachBtn = document.getElementById("attach");
@@ -646,6 +647,7 @@ function showView(name) {
   homeViewEl.hidden = name !== "home";
   noteViewEl.hidden = name !== "note";
   channelViewEl.hidden = name !== "channel";
+  aboutViewEl.hidden = name !== "about";
   markCurrent(navNoteEl, name === "note");
   markCurrent(navChannelEl, name === "channel");
 }
@@ -676,6 +678,12 @@ function route() {
     clearNoteFiles();
     resetPasswordField();
     textEl.focus();
+  } else if (location.pathname === "/about") {
+    showView("about");
+    // При загрузке раздел был скрыт, и браузер не докрутил до якоря — докручиваем сами
+    if (location.hash) {
+      document.getElementById(location.hash.slice(1))?.scrollIntoView();
+    }
   } else {
     showView("home");
   }

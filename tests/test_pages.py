@@ -5,7 +5,7 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("path", ["/", "/note", "/n/a5z573fs", "/c/a5z573fs"])
+@pytest.mark.parametrize("path", ["/", "/note", "/about", "/n/a5z573fs", "/c/a5z573fs"])
 async def test_page_returns_html(client, path):
     response = await client.get(path)
 
@@ -50,5 +50,6 @@ async def test_pages_not_in_openapi(client):
 
     assert "/" not in paths
     assert "/note" not in paths
+    assert "/about" not in paths
     assert "/n/{slug}" not in paths
     assert "/c/{slug}" not in paths

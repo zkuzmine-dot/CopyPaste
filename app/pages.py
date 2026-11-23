@@ -19,6 +19,11 @@ def new_note_page() -> FileResponse:
     return FileResponse(INDEX_HTML)
 
 
+@router.get("/about")
+def about_page() -> FileResponse:
+    return FileResponse(INDEX_HTML)
+
+
 # Заметку загружает JS по slug из адреса, поэтому сервер отдаёт ту же страницу
 @router.get("/n/{slug}")
 def note_page(slug: str) -> FileResponse:
