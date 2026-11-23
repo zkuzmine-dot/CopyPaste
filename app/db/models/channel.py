@@ -46,7 +46,9 @@ class Participant(Base):
     role: Mapped[str] = mapped_column(String(8))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    channel: Mapped[Channel] = relationship()
+    # raise: связь не догружается сама. В async неявная загрузка невозможна (MissingGreenlet),
+    # поэтому канал либо присвоен при создании, либо загружен явно (joinedload)
+    channel: Mapped[Channel] = relationship(lazy="raise")
 
 
 class Message(Base):

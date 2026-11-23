@@ -23,8 +23,8 @@ from app.storage.local import LocalFileStorage
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Соединения с БД берутся лениво, при первом запросе
     engine = create_db_engine()
-    app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.channel_manager = ChannelManager()
     app.state.file_storage = LocalFileStorage(settings.FILES_DIR)
@@ -33,8 +33,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = create_redis(settings.REDIS_URL)
     app.state.upload_rate_limiter = create_upload_rate_limiter(app.state.redis)
     yield
-    app.state.redis.close()
-    engine.dispose()
+    await app.state.redis.aclose()
+    await engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)

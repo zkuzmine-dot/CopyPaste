@@ -7,7 +7,7 @@
 
 import math
 
-from redis import Redis
+from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.settings import settings
@@ -52,7 +52,7 @@ class PasswordAttempts:
         self._redis = redis
         self._record = redis.register_script(_RECORD_FAILURE)
 
-    def retry_after(self, ip: str, slug: str) -> int | None:
+    async def retry_after(self, ip: str, slug: str) -> int | None:
         """Сколько секунд ждать, если IP или заметка заморожены; None — можно пробовать.
 
         Проверяется до Argon2: замороженный адрес не должен тратить память и CPU сервера.
@@ -61,17 +61,17 @@ class PasswordAttempts:
             pipe = self._redis.pipeline(transaction=False)
             pipe.pttl(_ban_ip(ip))
             pipe.pttl(_lock_note(slug))
-            remaining_ms = pipe.execute()
+            remaining_ms = await pipe.execute()
         except RedisError as exc:
             raise AttemptsUnavailableError from exc
         # PTTL: -2 — ключа нет. Округляем вверх, чтобы не сказать «через 0 секунд»
         waits = [math.ceil(ms / 1000) for ms in remaining_ms if ms > 0]
         return max(waits) if waits else None
 
-    def record_failure(self, ip: str, slug: str) -> int:
+    async def record_failure(self, ip: str, slug: str) -> int:
         """Учитывает неверный пароль. Возвращает, сколько попыток осталось до заморозки."""
         try:
-            note_failures = self._record(
+            note_failures = await self._record(
                 keys=[_failures_note(slug), _lock_note(slug)],
                 args=[
                     settings.UNLOCK_NOTE_WINDOW_SECONDS,
@@ -79,7 +79,7 @@ class PasswordAttempts:
                     settings.UNLOCK_NOTE_LOCK_SECONDS,
                 ],
             )
-            ip_failures = self._record(
+            ip_failures = await self._record(
                 keys=[_failures_ip(ip), _ban_ip(ip)],
                 args=[
                     settings.UNLOCK_IP_WINDOW_SECONDS,
@@ -97,9 +97,9 @@ class PasswordAttempts:
             0,
         )
 
-    def reset_note(self, slug: str) -> None:
+    async def reset_note(self, slug: str) -> None:
         # Счётчик IP не сбрасываем: верный пароль к своей заметке не отменяет подбор к чужим
         try:
-            self._redis.delete(_failures_note(slug))
+            await self._redis.delete(_failures_note(slug))
         except RedisError as exc:
             raise AttemptsUnavailableError from exc

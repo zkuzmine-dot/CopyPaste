@@ -4,8 +4,8 @@ from typing import Annotated
 
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from redis import Redis
-from sqlalchemy.orm import Session, sessionmaker
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
@@ -77,8 +77,7 @@ async def receive_upload(
     Сессию БД во время чтения не держим: медленные загрузки иначе заняли бы весь пул.
     """
     limiter: UploadRateLimiter = request.app.state.upload_rate_limiter
-    # В пуле потоков: клиент Redis синхронный, а зависший Redis держал бы цикл событий
-    if not await run_in_threadpool(limiter.allow, client_ip(request)):
+    if not await limiter.allow(client_ip(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
 
     # Content-Length проверяем до чтения, но не полагаемся на него: его может не быть
@@ -89,7 +88,7 @@ async def receive_upload(
     if declared_size == 0:
         raise _empty()
 
-    factory: sessionmaker[Session] = request.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     used = await run_db(factory, files_service.total_size)
     if used + (declared_size or 0) > settings.FILES_MAX_TOTAL_BYTES:
@@ -111,8 +110,8 @@ async def receive_upload(
     except ClientDisconnect:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Upload interrupted") from None
 
-    def record(db: Session) -> FileRead:
-        stored = files_service.create_upload(
+    async def record(db: AsyncSession) -> FileRead:
+        stored = await files_service.create_upload(
             db,
             storage_key=key,
             name=clean_filename(name),
@@ -162,8 +161,8 @@ class _Download:
     chunk_size: int | None
 
 
-def _find_download(db: Session, public_id: str) -> _Download | None:
-    stored = files_service.get_available_file(db, public_id)
+async def _find_download(db: AsyncSession, public_id: str) -> _Download | None:
+    stored = await files_service.get_available_file(db, public_id)
     if stored is None:
         return None
     return _Download(
@@ -191,7 +190,7 @@ async def _file_cipher(
     if key_id is None:
         raise expired
     try:
-        key = await run_in_threadpool(FileKeys(request.app.state.redis).get, key_id)
+        key = await FileKeys(request.app.state.redis).get(key_id)
     except FileKeysUnavailableError:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, detail="File is temporarily unavailable"
@@ -226,7 +225,7 @@ async def download_file(
     key_id: str | None = None,
 ) -> Response:
     _check_link(public_id, exp, inline, sig, key_id)
-    factory: sessionmaker[Session] = request.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     found = await run_db(factory, lambda db: _find_download(db, public_id))
     # Подпись верная — файл точно был, значит, его уже получили или срок вышел
@@ -240,12 +239,17 @@ async def download_file(
         **SECURITY_HEADERS,
         "Content-Disposition": content_disposition(found.name, inline=inline),
     }
+    # Подготовка ответа трогает диск (stat, open), поэтому — в пуле потоков
     try:
         if found.encryption_nonce is None:
-            return storage.download(
-                found.storage_key, media_type=found.content_type, headers=headers
+            return await run_in_threadpool(
+                storage.download,
+                found.storage_key,
+                media_type=found.content_type,
+                headers=headers,
             )
-        return encrypted_download(
+        return await run_in_threadpool(
+            encrypted_download,
             storage,
             found.storage_key,
             await _file_cipher(request, found, public_id, key_id),
@@ -270,7 +274,7 @@ async def confirm_received(request: Request, public_id: str, exp: int, sig: str)
     # Только клиент знает, что получил файл: сервер видит лишь, что передал байты ядру,
     # а файл в несколько мегабайт целиком уходит в буферы сокетов ещё до обрыва связи
     _check_link(public_id, exp, False, sig, None)
-    factory: sessionmaker[Session] = request.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     storage: FileStorage = request.app.state.file_storage
     deleted = await run_db(factory, lambda db: files_service.delete_received(db, public_id))
     if deleted is None:

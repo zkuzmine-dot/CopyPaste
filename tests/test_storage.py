@@ -115,7 +115,8 @@ async def test_file_is_not_visible_until_fully_written(file_storage):
 
     async def slow_stream():
         yield b"first "
-        visible_during_write.append(file_storage.path(key).exists())
+        # anyio.Path — в потоке: генератор итерирует сам save, то есть код хранилища в цикле
+        visible_during_write.append(await anyio.Path(file_storage.path(key)).exists())
         yield b"second"
 
     await file_storage.save(key, slow_stream(), max_bytes=100)
@@ -201,10 +202,9 @@ def test_open_rejects_invalid_key(file_storage):
 # --- удаление ---
 
 
-@pytest.mark.anyio
-async def test_delete(file_storage):
+def test_delete(file_storage):
     key = new_storage_key()
-    await file_storage.save(key, stream(b"data"), max_bytes=100)
+    file_storage.write(key, [b"data"])
 
     file_storage.delete(key)
 
@@ -218,11 +218,10 @@ def test_delete_missing_key_is_ok(file_storage):
 # --- перечисление ---
 
 
-@pytest.mark.anyio
-async def test_keys_older_than(file_storage):
+def test_keys_older_than(file_storage):
     old_key, fresh_key = new_storage_key(), new_storage_key()
     for key in (old_key, fresh_key):
-        await file_storage.save(key, stream(b"data"), max_bytes=100)
+        file_storage.write(key, [b"data"])
     make_old(file_storage.path(old_key))
     # Не ключи хранилища: недописанный файл и посторонний файл в папке ключей
     part = file_storage.root / "tmp" / "abc.part"

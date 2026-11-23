@@ -8,7 +8,7 @@
 import secrets
 import time
 
-from redis import Redis
+from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.settings import settings
@@ -26,19 +26,19 @@ class FileKeys:
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
 
-    def put(self, key: bytes) -> tuple[str, int]:
+    async def put(self, key: bytes) -> tuple[str, int]:
         """id записи и момент (unix), когда она исчезнет: ссылки не должны жить дольше."""
         key_id = secrets.token_urlsafe(16)
         expires = int(time.time()) + settings.FILE_KEY_CACHE_SECONDS
         try:
-            self._redis.set(_name(key_id), key, exat=expires)
+            await self._redis.set(_name(key_id), key, exat=expires)
         except RedisError as exc:
             raise FileKeysUnavailableError from exc
         return key_id, expires
 
-    def get(self, key_id: str) -> bytes | None:
+    async def get(self, key_id: str) -> bytes | None:
         try:
-            value = self._redis.get(_name(key_id))
+            value = await self._redis.get(_name(key_id))
         except RedisError as exc:
             raise FileKeysUnavailableError from exc
         return value if isinstance(value, bytes) else None

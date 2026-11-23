@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.channel import Channel, Message
 from app.db.models.file import StoredFile
@@ -23,8 +23,10 @@ def message_read(message: Message, stored: StoredFile | None, *, with_links: boo
     )
 
 
-def live_messages_read(db: Session, channel: Channel, *, viewer_id: int) -> list[MessageRead]:
-    messages = channels_service.get_live_messages(db, channel)
-    files = files_service.files_of_messages(db, [m.id for m in messages])
+async def live_messages_read(
+    db: AsyncSession, channel: Channel, *, viewer_id: int
+) -> list[MessageRead]:
+    messages = await channels_service.get_live_messages(db, channel)
+    files = await files_service.files_of_messages(db, [m.id for m in messages])
     # Ссылки на свой файл не выдаём: скачав его, отправитель удалил бы файл у получателя
     return [message_read(m, files.get(m.id), with_links=m.sender_id != viewer_id) for m in messages]

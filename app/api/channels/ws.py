@@ -3,7 +3,9 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.interfaces import ORMOption
 
 from app.api.channels.presenters import live_messages_read, message_read
 from app.db.connection import run_db
@@ -63,18 +65,18 @@ async def _receive_event(websocket: WebSocket) -> ClientEvent:
         raise InvalidEventError(exc.errors()[0]["msg"]) from None
 
 
-def _identify(db: Session, slug: str, token: str) -> Identity | CloseCode:
-    channel = channels_service.get_active_channel(db, slug)
+async def _identify(db: AsyncSession, slug: str, token: str) -> Identity | CloseCode:
+    channel = await channels_service.get_active_channel(db, slug)
     if channel is None:
         return CloseCode.CHANNEL_NOT_FOUND
-    participant = channels_service.get_participant(db, channel, token)
+    participant = await channels_service.get_participant(db, channel, token)
     if participant is None:
         return CloseCode.UNAUTHORIZED
     return Identity(channel_id=channel.id, participant_id=participant.id)
 
 
 async def _authenticate(
-    websocket: WebSocket, factory: sessionmaker[Session], slug: str
+    websocket: WebSocket, factory: async_sessionmaker[AsyncSession], slug: str
 ) -> Identity | None:
     try:
         async with asyncio.timeout(settings.WS_AUTH_TIMEOUT_SECONDS):
@@ -102,27 +104,31 @@ class LoadedState:
     messages: list[MessageRead]
 
 
-def _get_participant(db: Session, participant_id: int) -> Participant:
+async def _get_participant(
+    db: AsyncSession, participant_id: int, *options: ORMOption
+) -> Participant:
     # Чистка удаляет канал вместе с участниками, пока вкладка ещё открыта
-    participant = db.get(Participant, participant_id)
+    participant = await db.get(Participant, participant_id, options=options)
     if participant is None:
         raise channels_service.ChannelNotFoundError
     return participant
 
 
-def _load_state(db: Session, participant_id: int) -> LoadedState:
-    participant = _get_participant(db, participant_id)
+async def _load_state(db: AsyncSession, participant_id: int) -> LoadedState:
+    # Канал — тем же запросом: сама связь не догружается (lazy="raise")
+    participant = await _get_participant(db, participant_id, joinedload(Participant.channel))
     channel = participant.channel
+    participants = await channels_service.count_participants(db, channel)
     return LoadedState(
         role=ParticipantRole(participant.role),
-        peer_joined=channels_service.count_participants(db, channel)
-        == channels_service.MAX_PARTICIPANTS,
-        messages=live_messages_read(db, channel, viewer_id=participant_id),
+        peer_joined=participants == channels_service.MAX_PARTICIPANTS,
+        messages=await live_messages_read(db, channel, viewer_id=participant_id),
     )
 
 
-def _add_message(db: Session, participant_id: int, text: str) -> MessageEvent:
-    message = channels_service.add_message(db, _get_participant(db, participant_id), text)
+async def _add_message(db: AsyncSession, participant_id: int, text: str) -> MessageEvent:
+    participant = await _get_participant(db, participant_id)
+    message = await channels_service.add_message(db, participant, text)
     return MessageEvent.model_validate(message)
 
 
@@ -132,23 +138,23 @@ class FileMessageEvents:
     for_others: MessageEvent
 
 
-def _add_file_message(db: Session, participant_id: int, file_id: str) -> FileMessageEvents:
-    message, stored = channels_service.add_file_message(
-        db, _get_participant(db, participant_id), file_id
-    )
-    # Собираем здесь, внутри сессии: после коммита объекты ORM протухнут
+async def _add_file_message(
+    db: AsyncSession, participant_id: int, file_id: str
+) -> FileMessageEvents:
+    participant = await _get_participant(db, participant_id)
+    message, stored = await channels_service.add_file_message(db, participant, file_id)
     return FileMessageEvents(
         for_uploader=MessageEvent(**message_read(message, stored, with_links=False).model_dump()),
         for_others=MessageEvent(**message_read(message, stored, with_links=True).model_dump()),
     )
 
 
-def _become_sender(db: Session, participant_id: int) -> None:
-    channels_service.become_sender(db, _get_participant(db, participant_id))
+async def _become_sender(db: AsyncSession, participant_id: int) -> None:
+    await channels_service.become_sender(db, await _get_participant(db, participant_id))
 
 
 async def _close_if_idle(
-    manager: ChannelManager, factory: sessionmaker[Session], slug: str, channel_id: int
+    manager: ChannelManager, factory: async_sessionmaker[AsyncSession], slug: str, channel_id: int
 ) -> float | None:
     seconds_left = await run_db(factory, lambda db: channels_service.close_if_idle(db, channel_id))
     if seconds_left is None:
@@ -157,7 +163,7 @@ async def _close_if_idle(
 
 
 async def _watch_idle(
-    manager: ChannelManager, factory: sessionmaker[Session], slug: str, channel_id: int
+    manager: ChannelManager, factory: async_sessionmaker[AsyncSession], slug: str, channel_id: int
 ) -> None:
     # Срок берём из last_activity_at в БД, поэтому таймер не нужно сбрасывать вручную
     while (seconds_left := await _close_if_idle(manager, factory, slug, channel_id)) is not None:
@@ -166,7 +172,7 @@ async def _watch_idle(
 
 @router.websocket("/ws/channels/{slug}")
 async def channel_ws(websocket: WebSocket, slug: str) -> None:
-    factory: sessionmaker[Session] = websocket.app.state.session_factory
+    factory: async_sessionmaker[AsyncSession] = websocket.app.state.session_factory
     manager: ChannelManager = websocket.app.state.channel_manager
     await websocket.accept()
     try:
@@ -224,7 +230,7 @@ async def _handle_event(
     event: ClientEvent,
     connection: Connection,
     manager: ChannelManager,
-    factory: sessionmaker[Session],
+    factory: async_sessionmaker[AsyncSession],
     slug: str,
     me: int,
 ) -> None:
