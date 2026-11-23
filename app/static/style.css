@@ -349,8 +349,7 @@ a:hover {
 }
 
 .password-input,
-.share-url,
-.expiry select {
+.share-url {
   min-width: 0;
   height: 40px;
   padding: 0 12px;
@@ -372,7 +371,6 @@ a:hover {
 
 .password-input:focus,
 .share-url:focus,
-.expiry select:focus,
 .editor:focus {
   outline: 2px solid var(--primary);
   outline-offset: -1px;
@@ -419,7 +417,7 @@ a:hover {
   .button,
   .password-input,
   .share-url,
-  .expiry select {
+  .segmented span {
     min-height: 44px;
   }
 
@@ -508,7 +506,36 @@ a:hover {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+}
+
+.editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.editor-title {
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.editor-slug {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.info {
+  margin: -10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.info:empty {
+  display: none;
 }
 
 .editor {
@@ -524,40 +551,158 @@ a:hover {
   font: 14px/1.6 var(--mono);
 }
 
-.meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .counter {
+  color: var(--muted);
   font: 12px var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.toolbar {
+.share-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 24px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.share-panel .share-qr {
+  width: 132px;
+  height: 132px;
+}
+
+.share-body {
+  flex: 1 1 300px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.share-status {
+  margin: 0;
+  color: var(--ok);
+  font-size: 13px;
+}
+
+.share-status.error {
+  color: var(--error);
+}
+
+.share-status:empty {
+  display: none;
+}
+
+.share-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.note-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+}
+
+.section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.section-count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 24px;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
 }
 
-.expiry {
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 24px;
+}
+
+/* Высота строки — как у полей рядом: подпись встаёт по центру первой строки */
+.option-label {
+  flex: 0 0 140px;
+  color: var(--muted);
+  line-height: 40px;
+}
+
+.option-control {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Варианты — радиокнопки: выбор одного, стрелки на клавиатуре работают сами */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--line-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.segmented label {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+}
+
+.segmented input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.segmented span {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: var(--muted);
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  background: var(--bg);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segmented span:hover {
+  background: var(--panel);
+}
+
+.segmented input:checked + span {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--text);
+  outline-offset: -4px;
 }
 
 .burn {
@@ -577,12 +722,49 @@ a:hover {
 
 .password-field {
   display: flex;
-  align-items: center;
   gap: 8px;
+  max-width: 420px;
 }
 
-.toolbar .buttons {
-  justify-content: flex-end;
+.password-field .password-input {
+  flex: 1;
+  width: auto;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.actions .buttons {
+  margin-left: auto;
+}
+
+.shortcut {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+kbd {
+  font: 12px var(--mono);
+}
+
+@media (pointer: coarse) {
+  .shortcut {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .option-label {
+    flex-basis: 100%;
+    line-height: 1.5;
+  }
 }
 
 .burn-confirm {
@@ -744,58 +926,7 @@ a:hover {
   outline-offset: 4px;
 }
 
-/* --- окно «Поделиться» --- */
-
-.share-dialog {
-  width: min(420px, calc(100vw - 32px));
-  padding: 24px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-}
-
-.share-dialog::backdrop {
-  background: rgb(0 0 0 / 0.45);
-}
-
-.share-close-form {
-  margin: 0;
-  position: absolute;
-  top: 8px;
-  right: 8px;
-}
-
-.share-close {
-  width: 36px;
-  height: 36px;
-  background: none;
-  border: none;
-  border-radius: var(--radius);
-  color: var(--muted);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.share-close:hover {
-  color: var(--text);
-  background: var(--panel);
-}
-
-.share-title {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.share-option {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-}
+/* --- QR-код и ссылка: заметка и приглашение в канал --- */
 
 .share-label {
   font-size: 13px;
@@ -809,11 +940,6 @@ a:hover {
   padding: 8px;
   background: #ffffff;
   border: 1px solid var(--line);
-}
-
-.share-download {
-  align-self: flex-start;
-  font-size: 13px;
 }
 
 /* --- канал --- */

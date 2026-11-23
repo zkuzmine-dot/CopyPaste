@@ -15,9 +15,10 @@ const burnConfirmEl = document.getElementById("burn-confirm");
 const burnRevealBtn = document.getElementById("burn-reveal");
 const saveBtn = document.getElementById("save");
 const copyBtn = document.getElementById("copy");
-const shareBtn = document.getElementById("share");
 const statusEl = document.getElementById("status");
-const shareDialog = document.getElementById("share-dialog");
+const noteTitleEl = document.getElementById("note-title");
+const sharePanelEl = document.getElementById("share-panel");
+const shareStatusEl = document.getElementById("share-status");
 const shareUrlEl = document.getElementById("share-url");
 const shareCopyBtn = document.getElementById("share-copy");
 const shareQrEl = document.getElementById("share-qr");
@@ -30,6 +31,7 @@ const navChannelEl = document.getElementById("nav-channel");
 const attachBtn = document.getElementById("attach");
 const attachInput = document.getElementById("attach-input");
 const attachmentListEl = document.getElementById("attachment-list");
+const filesCountEl = document.getElementById("files-count");
 const noteFilesEl = document.getElementById("note-files");
 const noteFilesHintEl = document.getElementById("note-files-hint");
 const burnFilesEl = document.getElementById("burn-files");
@@ -85,9 +87,37 @@ function formatDate(iso) {
   });
 }
 
+function setTitle(slug) {
+  if (!slug) {
+    noteTitleEl.textContent = "Новая заметка";
+    return;
+  }
+  const code = el("span", "editor-slug", slug);
+  noteTitleEl.replaceChildren("Заметка ", code);
+}
+
+function showShareStatus(message, kind = "success") {
+  shareStatusEl.textContent = message;
+  shareStatusEl.className = `share-status ${kind}`;
+}
+
+function showSharePanel(slug) {
+  sharePanelEl.hidden = !slug;
+  showShareStatus("");
+  if (!slug) {
+    return;
+  }
+  const qrUrl = `${API_URL}/${encodeURIComponent(slug)}/qr`;
+  shareUrlEl.value = noteUrl(slug);
+  shareQrEl.src = qrUrl;
+  shareQrDownload.href = qrUrl;
+  shareQrDownload.download = `copypaste-${slug}.svg`;
+}
+
 function setNote(note) {
   currentSlug = note ? note.slug : null;
-  shareBtn.disabled = !currentSlug;
+  setTitle(currentSlug);
+  showSharePanel(currentSlug);
 
   if (!note) {
     infoEl.textContent = "";
@@ -143,6 +173,12 @@ function setBusy(busy) {
   updateSaveButton();
 }
 
+function updateFilesCount() {
+  filesCountEl.textContent = attachments.length
+    ? `${attachments.length} из ${MAX_NOTE_FILES}`
+    : "";
+}
+
 function addAttachments(files) {
   const room = MAX_NOTE_FILES - attachments.length;
   if (room <= 0) {
@@ -160,11 +196,13 @@ function addAttachments(files) {
       onRemoved: (removed) => {
         attachments = attachments.filter((item) => item !== removed);
         updateSaveButton();
+        updateFilesCount();
       },
     });
     attachments.push(upload);
   }
   updateSaveButton();
+  updateFilesCount();
 }
 
 function clearAttachments() {
@@ -175,6 +213,7 @@ function clearAttachments() {
   attachments = [];
   attachmentListEl.replaceChildren();
   updateSaveButton();
+  updateFilesCount();
 }
 
 function clearNoteFiles() {
@@ -401,6 +440,7 @@ function showNote(note) {
   if (note.burn_after_read) {
     // Заметки на сервере больше нет — делиться нечем
     setNote(null);
+    noteTitleEl.textContent = "Заметка";
     infoEl.textContent = "Заметка удалена с сервера — это был единственный просмотр";
     renderNoteFiles(
       note.files,
@@ -431,6 +471,11 @@ async function revealNote() {
 }
 
 async function saveNote() {
+  // Кнопка выключена, пока идёт сохранение или грузятся файлы. Клавиши обходят кнопку:
+  // без проверки они сохранили бы заметку без недогруженных файлов или вторую копию
+  if (saveBtn.disabled) {
+    return;
+  }
   if (attachments.some((upload) => upload.state === "error")) {
     showStatus("Уберите файлы с ошибкой или загрузите их снова", "error");
     return;
@@ -445,7 +490,7 @@ async function saveNote() {
   }
 
   const body = { text, file_ids: fileIds, burn_after_read: burnEl.checked };
-  const seconds = Number(expiryEl.value);
+  const seconds = Number(expiryEl.querySelector("input:checked").value);
   if (seconds > 0) {
     body.expires_at = new Date(Date.now() + seconds * 1000).toISOString();
   }
@@ -480,7 +525,13 @@ async function saveNote() {
       note.files,
       note.has_password ? "Скачать файлы можно будет после ввода пароля." : "",
     );
-    showStatus("Сохранено");
+    statusEl.textContent = "";
+    try {
+      await copyToClipboard(noteUrl(note.slug));
+      showShareStatus("Сохранено, ссылка скопирована");
+    } catch {
+      showShareStatus("Сохранено");
+    }
   } catch {
     showStatus("Не удалось связаться с сервером", "error");
   } finally {
@@ -521,26 +572,13 @@ async function copyText() {
   }
 }
 
-function openShareDialog() {
-  if (!currentSlug) {
-    return;
-  }
-  const qrUrl = `${API_URL}/${encodeURIComponent(currentSlug)}/qr`;
-  shareUrlEl.value = noteUrl(currentSlug);
-  shareQrEl.src = qrUrl;
-  shareQrDownload.href = qrUrl;
-  shareQrDownload.download = `copypaste-${currentSlug}.svg`;
-  shareDialog.showModal();
-  shareUrlEl.select();
-}
-
 async function shareLink() {
   try {
     await copyToClipboard(shareUrlEl.value);
-    shareDialog.close();
-    showStatus("Ссылка скопирована");
+    showShareStatus("Ссылка скопирована");
   } catch {
-    showStatus("Не удалось скопировать ссылку", "error");
+    shareUrlEl.select();
+    showShareStatus("Не удалось скопировать — ссылка выделена, скопируйте её вручную", "error");
   }
 }
 
@@ -594,7 +632,6 @@ function route() {
 textEl.addEventListener("input", updateCounter);
 saveBtn.addEventListener("click", saveNote);
 copyBtn.addEventListener("click", copyText);
-shareBtn.addEventListener("click", openShareDialog);
 shareCopyBtn.addEventListener("click", shareLink);
 burnRevealBtn.addEventListener("click", revealNote);
 unlockFormEl.addEventListener("submit", unlockNote);
@@ -619,21 +656,17 @@ navNoteEl.addEventListener("click", (event) => {
   }
 });
 
-// Клик по затемнённому фону вокруг окна закрывает его
-shareDialog.addEventListener("click", (event) => {
-  const rect = shareDialog.getBoundingClientRect();
-  const outside =
-    event.clientX < rect.left ||
-    event.clientX > rect.right ||
-    event.clientY < rect.top ||
-    event.clientY > rect.bottom;
-  if (outside) {
-    shareDialog.close();
+textEl.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    saveNote();
   }
 });
 
-textEl.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+// Ctrl+S — по физической клавише: на русской раскладке event.key здесь «ы»
+document.addEventListener("keydown", (event) => {
+  const editing = !noteViewEl.hidden && !editorAreaEl.hidden;
+  if (editing && (event.ctrlKey || event.metaKey) && event.code === "KeyS") {
     event.preventDefault();
     saveNote();
   }

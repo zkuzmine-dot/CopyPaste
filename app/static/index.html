@@ -86,6 +86,28 @@
       </section>
 
       <div id="editor-area" class="editor-area">
+        <div class="editor-head">
+          <label id="note-title" class="editor-title" for="text">Новая заметка</label>
+          <span id="counter" class="counter">0 / 100 000</span>
+        </div>
+        <p id="info" class="info"></p>
+
+        <section id="share-panel" class="share-panel" aria-label="Поделиться заметкой" hidden>
+          <img id="share-qr" class="share-qr" alt="QR-код со ссылкой на заметку" width="132" height="132">
+          <div class="share-body">
+            <label class="share-label" for="share-url">Ссылка на заметку</label>
+            <div class="share-link-row">
+              <input id="share-url" class="share-url" type="text" readonly>
+              <button id="share-copy" class="button primary" type="button">Скопировать</button>
+            </div>
+            <p id="share-status" class="share-status" role="status"></p>
+            <div class="share-extra">
+              <a id="share-qr-download" class="share-download" download>Скачать QR-код</a>
+              <span>QR-код открывает заметку на телефоне</span>
+            </div>
+          </div>
+        </section>
+
         <textarea
           id="text"
           class="editor"
@@ -94,55 +116,67 @@
           spellcheck="false"
         ></textarea>
 
-        <div class="meta">
-          <span id="info" class="info"></span>
-          <span id="counter" class="counter">0 / 100 000</span>
-        </div>
+        <section class="note-section" aria-labelledby="files-title">
+          <div class="section-head">
+            <h2 id="files-title" class="section-title">
+              Файлы <span id="files-count" class="section-count"></span>
+            </h2>
+            <button id="attach" class="button" type="button">Прикрепить</button>
+            <input id="attach-input" type="file" multiple hidden>
+          </div>
+          <p id="note-files-hint" class="files-hint" hidden></p>
+          <ul id="note-files" class="file-list" hidden></ul>
+          <ul id="attachment-list" class="upload-list"></ul>
+        </section>
 
-        <p id="password-hint" class="files-hint" hidden>
-          Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
-        </p>
-        <p id="note-files-hint" class="files-hint" hidden></p>
-        <ul id="note-files" class="file-list" hidden></ul>
-        <ul id="attachment-list" class="upload-list"></ul>
+        <section class="note-section options" aria-labelledby="options-title">
+          <h2 id="options-title" class="section-title">Параметры</h2>
 
-        <div class="toolbar">
-          <div class="options">
-            <label class="expiry">
-              <span>Хранить</span>
-              <select id="expiry">
-                <option value="0">навсегда</option>
-                <option value="600">10 минут</option>
-                <option value="3600">1 час</option>
-                <option value="86400">1 день</option>
-                <option value="604800">1 неделю</option>
-              </select>
-            </label>
-
-            <label class="burn">
-              <input id="burn" type="checkbox">
-              <span>Удалить после прочтения</span>
-            </label>
-
-            <div class="password-field">
-              <input
-                id="note-password"
-                class="password-input"
-                type="password"
-                placeholder="Пароль (необязательно)"
-                autocomplete="new-password"
-                maxlength="128"
-              >
-              <button id="toggle-password" class="button small" type="button">Показать</button>
+          <div class="option-row">
+            <span id="expiry-label" class="option-label">Срок хранения</span>
+            <div id="expiry" class="segmented" role="radiogroup" aria-labelledby="expiry-label">
+              <label><input type="radio" name="expiry" value="0" checked><span>Навсегда</span></label>
+              <label><input type="radio" name="expiry" value="600"><span>10 минут</span></label>
+              <label><input type="radio" name="expiry" value="3600"><span>1 час</span></label>
+              <label><input type="radio" name="expiry" value="86400"><span>1 день</span></label>
+              <label><input type="radio" name="expiry" value="604800"><span>1 неделя</span></label>
             </div>
           </div>
 
+          <div class="option-row">
+            <span class="option-label">Чтение</span>
+            <label class="burn">
+              <input id="burn" type="checkbox">
+              <span>Удалить после первого прочтения</span>
+            </label>
+          </div>
+
+          <div class="option-row">
+            <label class="option-label" for="note-password">Пароль</label>
+            <div class="option-control">
+              <div class="password-field">
+                <input
+                  id="note-password"
+                  class="password-input"
+                  type="password"
+                  placeholder="Необязательно"
+                  autocomplete="new-password"
+                  maxlength="128"
+                >
+                <button id="toggle-password" class="button" type="button">Показать</button>
+              </div>
+              <p id="password-hint" class="files-hint" hidden>
+                Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div class="actions">
+          <span class="shortcut"><kbd>Ctrl+S</kbd> — сохранить</span>
           <div class="buttons">
-            <button id="attach" class="button" type="button">Прикрепить файлы</button>
-            <input id="attach-input" type="file" multiple hidden>
+            <button id="copy" class="button" type="button">Скопировать текст</button>
             <button id="save" class="button primary" type="button">Сохранить</button>
-            <button id="copy" class="button" type="button">Скопировать</button>
-            <button id="share" class="button" type="button" disabled>Поделиться</button>
           </div>
         </div>
       </div>
@@ -203,28 +237,6 @@
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
-
-  <dialog id="share-dialog" class="share-dialog">
-    <form method="dialog" class="share-close-form">
-      <button class="share-close" type="submit" aria-label="Закрыть">×</button>
-    </form>
-
-    <h2 class="share-title">Поделиться заметкой</h2>
-
-    <div class="share-option">
-      <span class="share-label">Ссылка</span>
-      <div class="share-link-row">
-        <input id="share-url" class="share-url" type="text" readonly>
-        <button id="share-copy" class="button primary" type="button">Скопировать</button>
-      </div>
-    </div>
-
-    <div class="share-option">
-      <span class="share-label">QR-код — отсканируйте камерой телефона</span>
-      <img id="share-qr" class="share-qr" alt="QR-код со ссылкой на заметку" width="232" height="232">
-      <a id="share-qr-download" class="share-download" download>Скачать QR-код</a>
-    </div>
-  </dialog>
 
   <script src="/static/files.js"></script>
   <script src="/static/channel.js"></script>
