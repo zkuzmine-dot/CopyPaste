@@ -58,31 +58,41 @@
     </section>
 
     <div id="note-view" class="note-view" hidden>
-      <section id="burn-confirm" class="burn-confirm" hidden>
-        <h2 class="burn-confirm-title">Эта заметка удалится сразу после просмотра</h2>
-        <p class="burn-confirm-text">
+      <section id="burn-confirm" class="gate" aria-labelledby="burn-title" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <h1 id="burn-title" class="gate-title">Эта заметка удалится сразу после просмотра</h1>
+        <p class="gate-text">
           Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
         </p>
-        <p id="burn-files" class="burn-confirm-text" hidden></p>
-        <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
+        <p id="burn-files" class="gate-text" hidden></p>
+        <button id="burn-reveal" class="button primary gate-action" type="button">Показать заметку</button>
       </section>
 
-      <section id="unlock" class="burn-confirm" hidden>
-        <h2 class="burn-confirm-title">Заметка защищена паролем</h2>
-        <p id="unlock-info" class="burn-confirm-text" hidden></p>
-        <form id="unlock-form" class="unlock-form">
+      <section id="unlock" class="gate" aria-labelledby="unlock-title" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1"></rect><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"></path></svg>
+        <h1 id="unlock-title" class="gate-title">Заметка защищена паролем</h1>
+        <p id="unlock-info" class="gate-text" hidden></p>
+        <form id="unlock-form" class="gate-form">
+          <label class="gate-label" for="unlock-password">Пароль</label>
           <input
             id="unlock-password"
             class="password-input"
             type="password"
-            placeholder="Пароль"
             autocomplete="current-password"
+            aria-describedby="unlock-error"
             maxlength="128"
             required
           >
-          <button id="unlock-submit" class="button primary" type="submit">Открыть</button>
+          <p id="unlock-error" class="unlock-error" role="alert" hidden></p>
+          <button id="unlock-submit" class="button primary gate-action" type="submit">Открыть</button>
         </form>
-        <p id="unlock-error" class="unlock-error" role="alert" hidden></p>
+      </section>
+
+      <section id="not-found" class="gate" aria-labelledby="not-found-title" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5"></path><path d="M9.5 13.5l5 5M14.5 13.5l-5 5"></path></svg>
+        <h1 id="not-found-title" class="gate-title">Заметка не найдена</h1>
+        <p class="gate-text">Срок её хранения истёк, её уже прочитали или в ссылке ошибка.</p>
+        <a class="button primary gate-action" href="/note">Новая заметка</a>
       </section>
 
       <div id="editor-area" class="editor-area">

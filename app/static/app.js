@@ -39,6 +39,7 @@ const passwordEl = document.getElementById("note-password");
 const passwordToggleBtn = document.getElementById("toggle-password");
 const passwordHintEl = document.getElementById("password-hint");
 const unlockEl = document.getElementById("unlock");
+const notFoundEl = document.getElementById("not-found");
 const unlockInfoEl = document.getElementById("unlock-info");
 const unlockFormEl = document.getElementById("unlock-form");
 const unlockPasswordEl = document.getElementById("unlock-password");
@@ -138,6 +139,7 @@ function showScreen(name) {
   editorAreaEl.hidden = name !== "editor";
   burnConfirmEl.hidden = name !== "burn";
   unlockEl.hidden = name !== "unlock";
+  notFoundEl.hidden = name !== "missing";
 }
 
 function passwordLength(value) {
@@ -265,15 +267,24 @@ function burnFilesText(count) {
     : "";
 }
 
-function showUnlockError(message) {
+// warn — заморозка: пароль тут ни при чём, поэтому без красной рамки у поля
+function showUnlockError(message, kind = "error") {
   unlockErrorEl.textContent = message;
+  unlockErrorEl.className = `unlock-error ${kind}`;
   unlockErrorEl.hidden = !message;
+  if (message && kind === "error") {
+    unlockPasswordEl.setAttribute("aria-invalid", "true");
+  } else {
+    unlockPasswordEl.removeAttribute("aria-invalid");
+  }
 }
 
 function stopUnlockCountdown() {
   clearInterval(unlockTimer);
   unlockTimer = null;
   unlockSubmitBtn.disabled = false;
+  unlockSubmitBtn.textContent = "Открыть";
+  unlockPasswordEl.disabled = false;
 }
 
 function startUnlockCountdown(seconds) {
@@ -288,9 +299,12 @@ function startUnlockCountdown(seconds) {
       return;
     }
     const wait = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-    showUnlockError(`Слишком много неверных попыток. Попробуйте снова через ${wait}`);
+    unlockSubmitBtn.textContent = `Открыть через ${wait}`;
   };
   unlockSubmitBtn.disabled = true;
+  unlockPasswordEl.value = "";
+  unlockPasswordEl.disabled = true;
+  showUnlockError("Слишком много неверных попыток", "warn");
   tick();
   unlockTimer = setInterval(tick, 1000);
 }
@@ -370,8 +384,7 @@ async function unlockNote(event) {
     }
     if (response.status === 404) {
       pendingSlug = null;
-      showScreen("editor");
-      showStatus(await errorMessage(response), "error");
+      showScreen("missing");
       return;
     }
     // Retry-After приходит с 429 и с той неверной попыткой (403), что включила заморозку
@@ -381,7 +394,7 @@ async function unlockNote(event) {
       return;
     }
     if (response.status === 429) {
-      showUnlockError("Слишком много неверных попыток. Попробуйте позже");
+      showUnlockError("Слишком много неверных попыток. Попробуйте позже", "warn");
       return;
     }
     showUnlockError(await unlockFailure(response));
@@ -389,8 +402,9 @@ async function unlockNote(event) {
   } catch {
     showUnlockError("Не удалось связаться с сервером");
   } finally {
-    unlockSubmitBtn.textContent = "Открыть";
+    // Во время заморозки кнопкой управляет отсчёт
     if (!unlockTimer) {
+      unlockSubmitBtn.textContent = "Открыть";
       unlockSubmitBtn.disabled = false;
     }
   }
@@ -410,6 +424,10 @@ async function loadNote(slug) {
   try {
     // GET ничего не сжигает: у одноразовой заметки text придёт как null
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}`);
+    if (response.status === 404) {
+      showScreen("missing");
+      return;
+    }
     if (!response.ok) {
       showStatus(await errorMessage(response), "error");
       return;
@@ -460,6 +478,11 @@ async function revealNote() {
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}/read`, {
       method: "POST",
     });
+    // Её успел прочитать кто-то другой
+    if (response.status === 404) {
+      showScreen("missing");
+      return;
+    }
     if (!response.ok) {
       showStatus(await errorMessage(response), "error");
       return;

@@ -788,26 +788,76 @@ kbd {
   color: var(--muted);
 }
 
-.unlock-form {
+/* Экраны перед заметкой: пароль, одноразовая, «не найдена» */
+.gate {
   display: flex;
-  gap: 8px;
-  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 400px;
+  padding: 32px 0 8px;
 }
 
-.unlock-form .password-input {
-  flex: 1;
-  width: auto;
+.gate-title {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.gate-text {
+  margin: 0;
+  color: var(--muted);
+}
+
+.gate-form {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.gate-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gate-form .password-input {
+  width: 100%;
   height: 44px;
 }
 
-.unlock-form .button {
+.gate-action {
+  align-self: stretch;
   min-height: 44px;
+  margin-top: 8px;
+}
+
+.password-input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+/* После ошибки поле в фокусе: зелёная обводка фокуса скрыла бы красную рамку */
+.password-input[aria-invalid="true"]:focus {
+  outline-color: var(--error);
+}
+
+.password-input:disabled {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--muted);
 }
 
 .unlock-error {
   margin: 0;
   color: var(--error);
   font-size: 13px;
+}
+
+.unlock-error.warn {
+  color: var(--warn);
 }
 
 .files-hint {
