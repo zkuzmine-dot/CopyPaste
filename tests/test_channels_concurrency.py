@@ -124,15 +124,17 @@ async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
     async with factory() as db, db.begin():
         await channels_service.join_channel(db, slug)
 
-    # Канал за 0,2 с до таймаута. Отправка проверила активность и «спит» в _touch,
-    # а за это время старая версия строки становится бездействующей. Без блокировки
-    # чистка удалила бы канал из-под отправки
-    monkeypatch.setattr(settings, "CHANNEL_IDLE_TIMEOUT_SECONDS", 1)
+    # Последняя активность — минуту назад. Пока таймаут час, отправка видит канал активным.
+    # Когда она прошла проверку и «спит» в _touch, таймаут становится 30 с: для чистки
+    # старая версия строки бездействует, а обновлённая отправкой — свежая. Без блокировки
+    # чистка удалила бы канал из-под отправки. Запас — десятки секунд, а не доли: проверки
+    # сравнивают с now() в БД, и задержка или прыжок часов не меняют исход
+    monkeypatch.setattr(settings, "CHANNEL_IDLE_TIMEOUT_SECONDS", 3600)
     async with factory() as db, db.begin():
         await db.execute(
             update(Channel)
             .where(Channel.slug == slug)
-            .values(last_activity_at=func.now() - timedelta(seconds=0.8))
+            .values(last_activity_at=func.now() - timedelta(minutes=1))
         )
 
     send_holds_lock = anyio.Event()
@@ -154,6 +156,7 @@ async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
 
     async def cleanup() -> None:
         await send_holds_lock.wait()
+        monkeypatch.setattr(settings, "CHANNEL_IDLE_TIMEOUT_SECONDS", 30)
         await anyio.sleep(RACE_WINDOW)
         async with factory() as db, db.begin():
             deleted.append(await channels_service.delete_inactive_channels(db))
