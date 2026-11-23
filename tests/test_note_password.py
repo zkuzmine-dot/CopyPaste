@@ -1,7 +1,9 @@
+import socket
 import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
+import anyio
 import httpx2
 import pytest
 from httpx2.websockets import ASGIWebSocketTransport
@@ -185,11 +187,11 @@ async def test_freezing_failure_without_redis_is_still_403(client, limits, monke
     original = PasswordAttempts.retry_after
     calls = []
 
-    def fails_after_check(self, ip, slug):
+    async def fails_after_check(self, ip, slug):
         calls.append(slug)
         if len(calls) > 1:
             raise AttemptsUnavailableError
-        return original(self, ip, slug)
+        return await original(self, ip, slug)
 
     monkeypatch.setattr(PasswordAttempts, "retry_after", fails_after_check)
 
@@ -264,16 +266,56 @@ async def test_argon2_runs_outside_event_loop(client, monkeypatch):
     assert threading.main_thread() not in threads
 
 
-async def test_unavailable_redis_is_503(client):
+async def test_unavailable_redis_is_503(client, unavailable_redis):
     note = await protected(client)
-    host = urlsplit(settings.REDIS_URL).hostname
     # Напрямую, без monkeypatch: фикстура client сама уберёт app.state.redis после теста
-    app.state.redis = create_redis(f"redis://{host}:6390/0")
+    app.state.redis = unavailable_redis
 
     response = await unlock(client, note["slug"])
 
     assert response.status_code == 503
     assert TEXT not in response.text
+
+
+async def test_hung_redis_does_not_stop_other_requests(committing_client, monkeypatch):
+    note = await protected(committing_client)
+    plain = await created(committing_client, text="открытая заметка")
+    asked_redis = anyio.Event()
+    original = PasswordAttempts.retry_after
+
+    async def spy(self, ip, slug):
+        asked_redis.set()
+        return await original(self, ip, slug)
+
+    monkeypatch.setattr(PasswordAttempts, "retry_after", spy)
+    unlocked = {}
+
+    async def unlock_note() -> None:
+        started = time.perf_counter()
+        unlocked["status"] = (await unlock(committing_client, note["slug"])).status_code
+        unlocked["took"] = time.perf_counter() - started
+
+    # Слушает, но не принимает: соединение устанавливается, а ответа нет — так выглядит
+    # зависший Redis
+    with anyio.fail_after(10), socket.create_server(("127.0.0.1", 0)) as silent:
+        port = silent.getsockname()[1]
+        app.state.redis = hung = create_redis(f"redis://127.0.0.1:{port}/0")
+        try:
+            async with anyio.create_task_group() as requests:
+                requests.start_soon(unlock_note)
+                await asked_redis.wait()
+                started = time.perf_counter()
+                other = await committing_client.get(f"{NOTES}/{plain['slug']}")
+                other_took = time.perf_counter() - started
+        finally:
+            await hung.aclose()
+
+    # Проверка пароля ждала ответа до таймаута и отказала, а цикл событий всё это время
+    # обслуживал других
+    assert unlocked["status"] == 503
+    assert unlocked["took"] >= 1
+    assert other.status_code == 200
+    assert other_took < 0.5
 
 
 # --- запрещённые действия ---

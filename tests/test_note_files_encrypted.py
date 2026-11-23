@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.file import StoredFile
-from app.db.redis import create_redis
 from app.main import app
 from app.services import files as files_service
 from app.services import notes as notes_service
@@ -231,13 +230,17 @@ async def test_missing_bytes_are_410(client, db, file_storage):
 # --- ключ в Redis ---
 
 
+async def cached_keys(redis_client) -> list[bytes]:
+    return [name async for name in redis_client.scan_iter("file-key:*")]
+
+
 async def test_key_is_cached_only_for_notes_with_files(client, redis_client):
     plain = (await client.post(NOTES, json={"text": "без файлов", "password": PASSWORD})).json()
     await unlock(client, plain["slug"])
-    assert list(redis_client.scan_iter("file-key:*")) == []
+    assert await cached_keys(redis_client) == []
 
     await protected_file(client)
-    assert len(list(redis_client.scan_iter("file-key:*"))) == 1
+    assert len(await cached_keys(redis_client)) == 1
 
 
 async def test_links_do_not_outlive_the_key(client, redis_client, monkeypatch):
@@ -246,17 +249,17 @@ async def test_links_do_not_outlive_the_key(client, redis_client, monkeypatch):
 
     file = await protected_file(client, PNG, "photo.png")
 
-    [name] = redis_client.scan_iter("file-key:*")
+    [name] = await cached_keys(redis_client)
     for url in (file["download_url"], file["preview_url"]):
         expires = int(query_of(url)["exp"])
         assert expires <= started + 61
-        assert redis_client.expiretime(name) == expires
+        assert await redis_client.expiretime(name) == expires
 
 
 async def test_expired_key_needs_password_again(client, redis_client):
     note = await create(client, [await upload(client)])
     [file] = (await unlock(client, note["slug"]))["files"]
-    redis_client.delete(f"file-key:{query_of(file['download_url'])['key_id']}")
+    await redis_client.delete(f"file-key:{query_of(file['download_url'])['key_id']}")
 
     response = await client.get(file["download_url"])
 
@@ -284,11 +287,10 @@ async def test_link_without_key_id_is_403(client):
     assert response.status_code == 403
 
 
-async def test_unavailable_redis_on_download_is_503(client):
+async def test_unavailable_redis_on_download_is_503(client, unavailable_redis):
     file = await protected_file(client)
-    host = urlsplit(settings.REDIS_URL).hostname
     # Напрямую, без monkeypatch: фикстура client сама уберёт app.state.redis после теста
-    app.state.redis = create_redis(f"redis://{host}:6390/0")
+    app.state.redis = unavailable_redis
 
     assert (await client.get(file["download_url"])).status_code == 503
 

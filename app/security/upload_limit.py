@@ -6,7 +6,7 @@
 
 import logging
 
-from redis import Redis
+from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.realtime.rate_limit import KeyedRateLimiter
@@ -49,9 +49,9 @@ class UploadRateLimiter:
         self._take = redis.register_script(_TAKE_TOKEN)
         self._fallback = KeyedRateLimiter(rate, burst)
 
-    def allow(self, key: str) -> bool:
+    async def allow(self, key: str) -> bool:
         try:
-            return bool(self._take(keys=[_bucket(key)], args=[self._rate, self._burst]))
+            return bool(await self._take(keys=[_bucket(key)], args=[self._rate, self._burst]))
         except RedisError:
             logger.warning("Redis is unavailable: upload rate limit is counted in memory")
             return self._fallback.allow(key)

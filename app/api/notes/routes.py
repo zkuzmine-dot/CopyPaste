@@ -221,14 +221,14 @@ async def _load_protected(request: Request, slug: str) -> notes_service.Protecte
     return protected
 
 
-def _freeze_headers(
+async def _freeze_headers(
     attempts: PasswordAttempts, ip: str, slug: str, attempts_left: int
 ) -> dict[str, str] | None:
     # Эта ошибка и включила заморозку: срок сообщаем сразу, а не на следующей попытке
     if attempts_left > 0:
         return None
     try:
-        retry_after = attempts.retry_after(ip, slug)
+        retry_after = await attempts.retry_after(ip, slug)
     except AttemptsUnavailableError:
         # Что пароль неверный, уже известно — без срока ответ всё равно полезен
         return None
@@ -238,10 +238,7 @@ def _freeze_headers(
 async def _check_password(
     request: Request, protected: notes_service.ProtectedNote, body: NotePassword
 ) -> crypto.OpenedNote:
-    """Текст и ключ заметки, если пароль верный. Argon2 считается без открытой сессии БД.
-
-    Клиент Redis пока синхронный — его вызовы идут в пуле потоков.
-    """
+    """Текст и ключ заметки, если пароль верный. Argon2 считается без открытой сессии БД."""
     attempts = PasswordAttempts(request.app.state.redis)
     ip = client_ip(request)
     unavailable = HTTPException(
@@ -249,7 +246,7 @@ async def _check_password(
     )
     try:
         # До Argon2: замороженный адрес не должен тратить память и CPU сервера
-        retry_after = await run_in_threadpool(attempts.retry_after, ip, protected.slug)
+        retry_after = await attempts.retry_after(ip, protected.slug)
     except AttemptsUnavailableError:
         raise unavailable from None
     if retry_after is not None:
@@ -267,19 +264,17 @@ async def _check_password(
         )
     except crypto.DecryptionError:
         try:
-            attempts_left = await run_in_threadpool(attempts.record_failure, ip, protected.slug)
+            attempts_left = await attempts.record_failure(ip, protected.slug)
         except AttemptsUnavailableError:
             raise unavailable from None
-        headers = await run_in_threadpool(
-            _freeze_headers, attempts, ip, protected.slug, attempts_left
-        )
+        headers = await _freeze_headers(attempts, ip, protected.slug, attempts_left)
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail={"message": "Wrong password", "attempts_left": attempts_left},
             headers=headers,
         ) from None
     try:
-        await run_in_threadpool(attempts.reset_note, protected.slug)
+        await attempts.reset_note(protected.slug)
     except AttemptsUnavailableError:
         # Пароль верный — не повод отказывать; счётчик сам истечёт по окну
         logger.warning("Could not reset password attempts for note %s", protected.slug)
@@ -288,7 +283,7 @@ async def _check_password(
 
 async def _cache_file_key(request: Request, key: bytes) -> tuple[str, int]:
     try:
-        return await run_in_threadpool(FileKeys(request.app.state.redis).put, key)
+        return await FileKeys(request.app.state.redis).put(key)
     except FileKeysUnavailableError:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, detail="Password check is temporarily unavailable"

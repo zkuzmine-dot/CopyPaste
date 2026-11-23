@@ -90,12 +90,20 @@ def file_storage(tmp_path) -> LocalFileStorage:
 
 
 @pytest.fixture
-def redis_client():
+async def redis_client():
     client = create_redis(TEST_REDIS_URL)
-    client.flushdb()
+    await client.flushdb()
     yield client
-    client.flushdb()
-    client.close()
+    await client.flushdb()
+    await client.aclose()
+
+
+@pytest.fixture
+async def unavailable_redis():
+    # Тот же хост, но порт, на котором никого нет
+    client = create_redis(f"redis://{urlsplit(TEST_REDIS_URL).hostname}:6390/0")
+    yield client
+    await client.aclose()
 
 
 # --- async: приложение и тест в одном цикле событий ---

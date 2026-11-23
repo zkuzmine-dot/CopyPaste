@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     FILES_DISK_SWEEP_INTERVAL_SECONDS: int = 3600
 
     REDIS_URL: str = "redis://redis:6379/0"
+    REDIS_MAX_CONNECTIONS: int = 50
     NOTE_PASSWORD_MIN_LENGTH: int = 4
     NOTE_PASSWORD_MAX_LENGTH: int = 128
     KDF_TIME_COST: int = 10

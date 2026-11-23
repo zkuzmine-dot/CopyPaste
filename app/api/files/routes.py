@@ -4,7 +4,7 @@ from typing import Annotated
 
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from redis import Redis
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
@@ -77,8 +77,7 @@ async def receive_upload(
     Сессию БД во время чтения не держим: медленные загрузки иначе заняли бы весь пул.
     """
     limiter: UploadRateLimiter = request.app.state.upload_rate_limiter
-    # В пуле потоков: клиент Redis синхронный, а зависший Redis держал бы цикл событий
-    if not await run_in_threadpool(limiter.allow, client_ip(request)):
+    if not await limiter.allow(client_ip(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
 
     # Content-Length проверяем до чтения, но не полагаемся на него: его может не быть
@@ -191,7 +190,7 @@ async def _file_cipher(
     if key_id is None:
         raise expired
     try:
-        key = await run_in_threadpool(FileKeys(request.app.state.redis).get, key_id)
+        key = await FileKeys(request.app.state.redis).get(key_id)
     except FileKeysUnavailableError:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, detail="File is temporarily unavailable"

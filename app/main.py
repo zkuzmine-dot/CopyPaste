@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = create_redis(settings.REDIS_URL)
     app.state.upload_rate_limiter = create_upload_rate_limiter(app.state.redis)
     yield
-    app.state.redis.close()
+    await app.state.redis.aclose()
     await engine.dispose()
 
 
