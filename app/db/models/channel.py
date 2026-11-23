@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -36,6 +36,10 @@ class Participant(Base):
     __tablename__ = "participants"
     __table_args__ = (
         CheckConstraint("role IN ('sender', 'receiver')", name="ck_participants_role"),
+        CheckConstraint(
+            "octet_length(key_commitment) = 32", name="ck_participants_key_commitment_length"
+        ),
+        CheckConstraint("octet_length(public_key) = 65", name="ck_participants_public_key_length"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -45,6 +49,10 @@ class Participant(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(8))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Отпечаток (SHA-256 ключа) присылает при входе только подключившийся, поэтому создатель
+    # канала — участник без отпечатка. Порядок обмена — в app/utils/channel_keys.py
+    key_commitment: Mapped[bytes | None] = mapped_column(LargeBinary)
+    public_key: Mapped[bytes | None] = mapped_column(LargeBinary)
 
     # raise: связь не догружается сама. В async неявная загрузка невозможна (MissingGreenlet),
     # поэтому канал либо присвоен при создании, либо загружен явно (joinedload)

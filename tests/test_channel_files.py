@@ -10,6 +10,7 @@ from app.jobs.cleanup import run_channels_cleanup
 from app.jobs.files import run_files_gc
 from app.services import channels as channels_service
 from app.settings import settings
+from tests.channel_keys import device_keys, exchange_keys_by_token, join_by_http
 
 pytestmark = pytest.mark.anyio
 
@@ -29,9 +30,12 @@ def factory(committing_session_factory):
 
 
 @pytest.fixture
-async def channel(client) -> dict:
+async def channel(client, factory) -> dict:
+    keys = device_keys()
     created = (await client.post(URL)).json()
-    joined = (await client.post(f"{URL}/{created['slug']}/join")).json()
+    joined = (await join_by_http(client, created["slug"], keys)).json()
+    async with factory() as db, db.begin():
+        await exchange_keys_by_token(db, created["slug"], joined["token"], keys)
     return {"slug": created["slug"], "receiver": created["token"], "sender": joined["token"]}
 
 
@@ -112,6 +116,17 @@ async def test_upload_is_rejected_before_reading_body(client, channel, file_stor
     assert (await upload(client, slug, other["token"])).status_code == 401
     assert (await upload(client, slug, channel["receiver"])).status_code == 403
     assert (await upload(client, "zzzzzzzz", channel["sender"])).status_code == 404
+    assert files_on_disk(file_storage) == []
+
+
+async def test_upload_before_key_exchange_is_rejected(client, file_storage):
+    created = (await client.post(URL)).json()
+    joined = (await join_by_http(client, created["slug"])).json()
+
+    response = await upload(client, created["slug"], joined["token"])
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Keys are not exchanged yet"}
     assert files_on_disk(file_storage) == []
 
 

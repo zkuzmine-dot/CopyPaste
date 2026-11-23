@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, cast
 
@@ -9,6 +10,7 @@ from app.db.models.channel import Channel, Message, MessageKind, Participant, Pa
 from app.db.models.file import StoredFile
 from app.services import files as files_service
 from app.settings import settings
+from app.utils import channel_keys
 from app.utils.tokens import generate_token, hash_token
 
 MAX_PARTICIPANTS = 2
@@ -26,6 +28,33 @@ class ActionNotAllowedError(Exception):
     pass
 
 
+class KeysNotReadyError(Exception):
+    pass
+
+
+class KeyExchangeError(Exception):
+    pass
+
+
+class KeyOutOfOrderError(KeyExchangeError):
+    pass
+
+
+class KeyAlreadySentError(KeyExchangeError):
+    pass
+
+
+class KeyMismatchError(KeyExchangeError):
+    pass
+
+
+@dataclass(frozen=True)
+class KeyExchange:
+    key_sent: bool
+    peer_key_commitment: bytes | None
+    peer_public_key: bytes | None
+
+
 def _is_active() -> ColumnElement[bool]:
     # Без last_activity_at канал, брошенный во время перезапуска app, жил бы до чистки
     idle = timedelta(seconds=settings.CHANNEL_IDLE_TIMEOUT_SECONDS)
@@ -33,10 +62,12 @@ def _is_active() -> ColumnElement[bool]:
 
 
 async def _add_participant(
-    db: AsyncSession, channel: Channel, role: ParticipantRole
+    db: AsyncSession, channel: Channel, role: ParticipantRole, key_commitment: bytes | None = None
 ) -> tuple[Participant, str]:
     token = generate_token()
-    participant = Participant(channel=channel, token_hash=hash_token(token), role=role)
+    participant = Participant(
+        channel=channel, token_hash=hash_token(token), role=role, key_commitment=key_commitment
+    )
     db.add(participant)
     await db.flush()
     return participant, token
@@ -66,7 +97,9 @@ async def get_active_channel(db: AsyncSession, slug: str) -> Channel | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def join_channel(db: AsyncSession, slug: str) -> tuple[Participant, str]:
+async def join_channel(
+    db: AsyncSession, slug: str, key_commitment: bytes
+) -> tuple[Participant, str]:
     # FOR UPDATE: два одновременных join не пройдут оба проверку на свободный слот
     stmt = select(Channel).where(Channel.slug == slug, _is_active()).with_for_update()
     channel = (await db.execute(stmt)).scalar_one_or_none()
@@ -78,7 +111,7 @@ async def join_channel(db: AsyncSession, slug: str) -> tuple[Participant, str]:
     roles = select(Participant.role).where(Participant.channel_id == channel.id)
     taken = (await db.scalars(roles)).all()
     role = ParticipantRole.RECEIVER if ParticipantRole.SENDER in taken else ParticipantRole.SENDER
-    return await _add_participant(db, channel, role)
+    return await _add_participant(db, channel, role, key_commitment)
 
 
 async def count_participants(db: AsyncSession, channel: Channel) -> int:
@@ -102,11 +135,64 @@ async def get_live_messages(db: AsyncSession, channel: Channel) -> Sequence[Mess
     return (await db.execute(stmt)).scalars().all()
 
 
+async def _peer(db: AsyncSession, participant: Participant) -> Participant | None:
+    stmt = select(Participant).where(
+        Participant.channel_id == participant.channel_id, Participant.id != participant.id
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def get_key_exchange(db: AsyncSession, participant: Participant) -> KeyExchange:
+    peer = await _peer(db, participant)
+    return KeyExchange(
+        key_sent=participant.public_key is not None,
+        peer_key_commitment=peer.key_commitment if peer else None,
+        peer_public_key=peer.public_key if peer else None,
+    )
+
+
+async def keys_exchanged(db: AsyncSession, channel_id: int) -> bool:
+    stmt = (
+        select(func.count())
+        .select_from(Participant)
+        .where(Participant.channel_id == channel_id, Participant.public_key.is_not(None))
+    )
+    return (await db.execute(stmt)).scalar_one() == MAX_PARTICIPANTS
+
+
+async def submit_public_key(db: AsyncSession, participant: Participant, public_key: bytes) -> int:
+    """Сохраняет открытый ключ участника. Возвращает id собеседника — ему ключ нужно переслать.
+
+    Создатель отправляет ключ только после отпечатка подключившегося, подключившийся — только
+    после ключа создателя и только с тем же отпечатком. Каждый — один раз.
+    """
+    await _lock_active_channel(db, participant.channel_id)
+    await db.refresh(participant)
+    if participant.public_key is not None:
+        raise KeyAlreadySentError
+    # Без отпечатка не войти, поэтому создателю достаточно, что второй уже в канале
+    peer = await _peer(db, participant)
+    if peer is None:
+        raise KeyOutOfOrderError
+    commitment = participant.key_commitment
+    if commitment is not None:
+        if peer.public_key is None:
+            raise KeyOutOfOrderError
+        if not channel_keys.matches_commitment(public_key, commitment):
+            raise KeyMismatchError
+    participant.public_key = public_key
+    await _touch(db, participant.channel_id)
+    await db.flush()
+    return peer.id
+
+
 async def _lock_as_sender(db: AsyncSession, participant: Participant) -> None:
     await _lock_active_channel(db, participant.channel_id)
     await db.refresh(participant)
     if participant.role != ParticipantRole.SENDER:
         raise ActionNotAllowedError
+    if not await keys_exchanged(db, participant.channel_id):
+        raise KeysNotReadyError
 
 
 async def _insert_message(

@@ -11,6 +11,7 @@ from app.services import files as files_service
 from app.services import notes as notes_service
 from app.settings import settings
 from app.storage.base import new_storage_key
+from tests.channel_keys import join_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -49,7 +50,7 @@ async def note(db):
 @pytest.fixture
 async def message(db):
     receiver, _ = await channels_service.create_channel(db)
-    sender, _ = await channels_service.join_channel(db, receiver.channel.slug)
+    sender, _ = await join_ready(db, receiver.channel.slug)
     return await channels_service.add_message(db, sender, "hi")
 
 

@@ -4,9 +4,13 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.db.models.channel import Channel, Message, Participant, ParticipantRole
+from app.db.models.file import FileOrigin
 from app.services import channels as channels_service
+from app.services import files as files_service
 from app.settings import settings
+from app.storage.base import new_storage_key
 from app.utils.tokens import hash_token
+from tests.channel_keys import DeviceKeys, device_keys, join_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -19,7 +23,21 @@ async def receiver(db) -> Participant:
 
 @pytest.fixture
 async def sender(db, receiver) -> Participant:
-    participant, _ = await channels_service.join_channel(db, receiver.channel.slug)
+    participant, _ = await join_ready(db, receiver.channel.slug)
+    return participant
+
+
+@pytest.fixture
+def joiner_keys() -> DeviceKeys:
+    return device_keys()
+
+
+@pytest.fixture
+async def joiner(db, receiver, joiner_keys) -> Participant:
+    """Второе устройство вошло, но ключами ещё не обменялись."""
+    participant, _ = await channels_service.join_channel(
+        db, receiver.channel.slug, joiner_keys.commitment
+    )
     return participant
 
 
@@ -52,18 +70,24 @@ async def test_create_channel(db):
     assert token not in (await db.scalars(select(Participant.token_hash))).all()
 
 
-async def test_join_channel(db, receiver):
-    participant, token = await channels_service.join_channel(db, receiver.channel.slug)
+async def test_join_channel(db, receiver, joiner_keys):
+    participant, token = await channels_service.join_channel(
+        db, receiver.channel.slug, joiner_keys.commitment
+    )
 
     assert participant.role == ParticipantRole.SENDER
     assert participant.channel_id == receiver.channel_id
+    assert participant.key_commitment == joiner_keys.commitment
+    assert participant.public_key is None
     assert token
 
 
 async def test_join_after_creator_became_sender(db, receiver):
     await channels_service.become_sender(db, receiver)
 
-    participant, _ = await channels_service.join_channel(db, (await channel_of(db, receiver)).slug)
+    participant, _ = await channels_service.join_channel(
+        db, (await channel_of(db, receiver)).slug, device_keys().commitment
+    )
 
     assert receiver.role == ParticipantRole.SENDER
     assert participant.role == ParticipantRole.RECEIVER
@@ -71,19 +95,144 @@ async def test_join_after_creator_became_sender(db, receiver):
 
 async def test_join_full_channel(db, sender):
     with pytest.raises(channels_service.ChannelFullError):
-        await channels_service.join_channel(db, sender.channel.slug)
+        await channels_service.join_channel(
+            db, (await channel_of(db, sender)).slug, device_keys().commitment
+        )
 
 
 async def test_join_unknown_channel(db):
     with pytest.raises(channels_service.ChannelNotFoundError):
-        await channels_service.join_channel(db, "zzzzzzzz")
+        await channels_service.join_channel(db, "zzzzzzzz", device_keys().commitment)
 
 
 async def test_join_closed_channel(db, receiver):
     await channels_service.close_channel(db, receiver.channel)
 
     with pytest.raises(channels_service.ChannelNotFoundError):
-        await channels_service.join_channel(db, receiver.channel.slug)
+        await channels_service.join_channel(db, receiver.channel.slug, device_keys().commitment)
+
+
+# --- обмен ключами ---
+
+
+async def test_key_exchange_in_order(db, receiver, joiner, joiner_keys):
+    creator_key = device_keys().public
+
+    assert await channels_service.submit_public_key(db, receiver, creator_key) == joiner.id
+    assert await channels_service.submit_public_key(db, joiner, joiner_keys.public) == receiver.id
+
+    assert (receiver.public_key, joiner.public_key) == (creator_key, joiner_keys.public)
+    assert await channels_service.keys_exchanged(db, receiver.channel_id)
+
+
+async def test_creator_key_before_anyone_joined_is_out_of_order(db, receiver):
+    # Ключ создателя до отпечатка второго дал бы серверу время подогнать подменный ключ
+    with pytest.raises(channels_service.KeyOutOfOrderError):
+        await channels_service.submit_public_key(db, receiver, device_keys().public)
+
+    assert receiver.public_key is None
+
+
+async def test_joiner_key_before_creator_key_is_out_of_order(db, receiver, joiner, joiner_keys):
+    with pytest.raises(channels_service.KeyOutOfOrderError):
+        await channels_service.submit_public_key(db, joiner, joiner_keys.public)
+
+    assert joiner.public_key is None
+
+
+async def test_joiner_key_must_match_commitment(db, receiver, joiner):
+    await channels_service.submit_public_key(db, receiver, device_keys().public)
+
+    with pytest.raises(channels_service.KeyMismatchError):
+        await channels_service.submit_public_key(db, joiner, device_keys().public)
+
+    assert joiner.public_key is None
+    assert not await channels_service.keys_exchanged(db, joiner.channel_id)
+
+
+async def test_key_is_sent_once(db, receiver, joiner, joiner_keys):
+    first = device_keys().public
+    await channels_service.submit_public_key(db, receiver, first)
+    await channels_service.submit_public_key(db, joiner, joiner_keys.public)
+
+    with pytest.raises(channels_service.KeyAlreadySentError):
+        await channels_service.submit_public_key(db, receiver, device_keys().public)
+    with pytest.raises(channels_service.KeyAlreadySentError):
+        await channels_service.submit_public_key(db, joiner, joiner_keys.public)
+
+    assert receiver.public_key == first
+
+
+async def test_key_exchange_step_by_step(db, receiver, joiner, joiner_keys):
+    creator_key = device_keys().public
+    exchange = channels_service.KeyExchange
+
+    assert await channels_service.get_key_exchange(db, receiver) == exchange(
+        False, joiner_keys.commitment, None
+    )
+    assert await channels_service.get_key_exchange(db, joiner) == exchange(False, None, None)
+
+    await channels_service.submit_public_key(db, receiver, creator_key)
+    assert await channels_service.get_key_exchange(db, receiver) == exchange(
+        True, joiner_keys.commitment, None
+    )
+    assert await channels_service.get_key_exchange(db, joiner) == exchange(False, None, creator_key)
+
+    await channels_service.submit_public_key(db, joiner, joiner_keys.public)
+    assert await channels_service.get_key_exchange(db, receiver) == exchange(
+        True, joiner_keys.commitment, joiner_keys.public
+    )
+    assert await channels_service.get_key_exchange(db, joiner) == exchange(True, None, creator_key)
+
+
+async def test_key_exchange_updates_activity(db, receiver, joiner):
+    channel = await channel_of(db, receiver)
+    await set_last_activity(db, channel, 60)
+
+    await channels_service.submit_public_key(db, receiver, device_keys().public)
+
+    await db.refresh(channel)
+    assert channel.last_activity_at == await db.scalar(select(func.now()))
+
+
+async def test_key_in_inactive_channel_not_allowed(db, receiver, joiner):
+    await channels_service.close_channel(db, receiver.channel)
+
+    with pytest.raises(channels_service.ChannelNotFoundError):
+        await channels_service.submit_public_key(db, receiver, device_keys().public)
+
+
+async def test_send_before_keys_exchanged_not_allowed(db, joiner):
+    with pytest.raises(channels_service.KeysNotReadyError):
+        await channels_service.add_message(db, joiner, "too early")
+
+    assert (await db.scalars(select(Message))).all() == []
+
+
+async def test_send_file_before_keys_exchanged_not_allowed(db, joiner):
+    stored = await files_service.create_upload(
+        db,
+        storage_key=new_storage_key(),
+        name="a.txt",
+        content_type="application/octet-stream",
+        size_bytes=1,
+        origin=FileOrigin.CHANNEL,
+        uploaded_by_id=joiner.id,
+    )
+
+    with pytest.raises(channels_service.KeysNotReadyError):
+        await channels_service.add_file_message(db, joiner, stored.public_id)
+
+    await db.refresh(stored)
+    assert stored.message_id is None
+    assert (await db.scalars(select(Message))).all() == []
+
+
+async def test_send_after_one_key_not_allowed(db, receiver, joiner):
+    await channels_service.submit_public_key(db, receiver, device_keys().public)
+
+    with pytest.raises(channels_service.KeysNotReadyError):
+        await channels_service.add_message(db, joiner, "too early")
 
 
 # --- активность канала ---
@@ -204,10 +353,11 @@ async def test_new_sender_can_send_and_old_cannot(db, receiver, sender):
 
 @pytest.mark.parametrize("close", ["closed", "idle"])
 async def test_actions_in_inactive_channel_not_allowed(db, receiver, sender, close):
+    channel = await channel_of(db, sender)
     if close == "closed":
-        await channels_service.close_channel(db, sender.channel)
+        await channels_service.close_channel(db, channel)
     else:
-        await set_last_activity(db, sender.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
+        await set_last_activity(db, channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
 
     with pytest.raises(channels_service.ChannelNotFoundError):
         await channels_service.add_message(db, sender, "late")
@@ -276,7 +426,9 @@ async def test_delete_inactive_channels(db, sender):
 
 
 async def test_delete_inactive_channels_keeps_active(db, sender):
-    await set_last_activity(db, sender.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS - 10)
+    await set_last_activity(
+        db, await channel_of(db, sender), settings.CHANNEL_IDLE_TIMEOUT_SECONDS - 10
+    )
 
     assert await channels_service.delete_inactive_channels(db) == 0
     assert (await db.scalars(select(func.count()).select_from(Participant))).one() == 2

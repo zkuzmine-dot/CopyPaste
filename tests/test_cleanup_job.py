@@ -7,13 +7,14 @@ from app.db.models.channel import Channel, Message
 from app.jobs.cleanup import run_channels_cleanup
 from app.services import channels as channels_service
 from app.settings import settings
+from tests.channel_keys import join_ready
 
 pytestmark = pytest.mark.anyio
 
 
 async def test_run_channels_cleanup(db, session_factory):
     receiver, _ = await channels_service.create_channel(db)
-    sender, _ = await channels_service.join_channel(db, receiver.channel.slug)
+    sender, _ = await join_ready(db, receiver.channel.slug)
     message_id = (await channels_service.add_message(db, sender, "text")).id
     kept_channel_id = receiver.channel_id
     await db.execute(update(Message).values(expires_at=func.now() - timedelta(seconds=1)))
