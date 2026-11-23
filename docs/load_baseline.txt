@@ -1,0 +1,92 @@
+Замер «до» (синхронная версия), 20.11.2026, ветка refactor/async-db, этап 0
+Docker Desktop, Windows; нагрузка — из отдельного контейнера в сети compose
+Команда: docker run --rm -i --network copypaste_default python:3.13-slim sh -c
+    "pip install -q httpx websockets && python - http://app:8000 40" < docs/load_check.py
+
+Прогон 1
+HTTP GET note                ok=3000  errors=0         325/s  p50=  119.7 ms  p95=  156.1 ms  p99=  199.0 ms  wall=   9.2 s
+open 100 channels (seq)      wall=11.57 s
+WS message delivery          ok=1000  errors=0         256/s  p50= 2063.5 ms  p95= 3773.5 ms  p99= 3884.1 ms  wall=   3.9 s
+mixed: HTTP GET note         ok=2854  errors=146        22/s  p50=  119.1 ms  p95=  156.2 ms  p99= 1203.8 ms  wall= 131.8 s
+mixed: WS message delivery   ok=278   errors=722         2/s  p50=  646.9 ms  p95=31876.8 ms  p99=31936.5 ms  wall= 131.8 s
+
+Прогон 2
+HTTP GET note                ok=3000  errors=0         315/s  p50=  116.4 ms  p95=  224.4 ms  p99=  479.7 ms  wall=   9.5 s
+open 100 channels (seq)      wall=11.50 s
+WS message delivery          ok=1000  errors=0         251/s  p50= 2058.9 ms  p95= 3845.7 ms  p99= 3962.6 ms  wall=   4.0 s
+mixed: HTTP GET note         ok=2876  errors=124        22/s  p50=  115.6 ms  p95=  192.7 ms  p99=30501.7 ms  wall= 131.1 s
+mixed: WS message delivery   ok=196   errors=804         1/s  p50=  472.3 ms  p95=  831.4 ms  p99=  852.4 ms  wall= 131.1 s
+
+Порог зависания HTTP (один GET на запрос, все сразу):
+concurrency=15   ok=15   errors=0    wall=  0.07s
+concurrency=30   ok=30   errors=0    wall=  0.12s
+concurrency=39   ok=39   errors=0    wall=  0.15s
+concurrency=40   ok=40   errors=0    wall=  0.20s
+concurrency=41   ok=41   errors=0    wall=  0.15s
+concurrency=60   ok=20   errors=40   wall= 30.55s   <- 40 x QueuePool TimeoutError в логах app
+
+Причина: у синхронных ручек выход из get_db (commit, close — возврат соединения) идёт после
+сериализации ответа, а сериализация тоже занимает поток пула (40 потоков). Когда все потоки
+ждут соединение, а все 15 соединений (5 + 10) держат запросы, ждущие поток, — взаимная
+блокировка до таймаута пула (30 с). WebSocket тоже ходит в БД через пул потоков (run_db),
+поэтому в смешанной нагрузке блокировка наступает даже при 40 HTTP-запросах.
+
+==========================================================================================
+После этапа 3а (async-сессии и ручки, сервисы через run_sync), 21.11.2026
+
+Правка скрипта: перед смешанным раундом пауза 5 с, пока восстанавливается лимит WebSocket
+(10 событий подряд, дальше 2 в секунду). Без неё часть сообщений получала rate_limited и
+считалась потерянной — это была особенность скрипта, а не приложения. В цифрах «до» эта
+особенность тоже есть, но там их испортила в основном блокировка.
+
+HTTP GET note                ok=3000  errors=0         289/s  p50=   84.6 ms  p95=  406.2 ms  p99=  749.5 ms  wall=  10.4 s
+open 100 channels (seq)      wall=11.45 s
+WS message delivery          ok=1000  errors=0         322/s  p50= 1581.5 ms  p95= 2960.7 ms  p99= 3065.0 ms  wall=   3.1 s
+mixed: HTTP GET note         ok=3000  errors=0         275/s  p50=  101.2 ms  p95=  478.8 ms  p99=  907.8 ms  wall=  10.9 s
+mixed: WS message delivery   ok=1000  errors=0          92/s  p50= 2283.5 ms  p95= 4155.2 ms  p99= 4481.8 ms  wall=  10.9 s
+
+Порог зависания HTTP (тот же зонд):
+concurrency=41   ok=41   errors=0    wall=  0.16s
+concurrency=60   ok=60   errors=0    wall=  0.19s   (было: 40 ошибок, 30,55 с)
+concurrency=100  ok=100  errors=0    wall=  0.30s
+concurrency=200  ok=200  errors=0    wall=  0.71s
+
+==========================================================================================
+После перехода целиком (этапы 3б и 4: сервисы async, Redis async), 23.11.2026
+
+Та же команда, concurrency 40, приложение под uvicorn --reload, как и в замере «до».
+
+Прогон 1
+HTTP GET note                ok=3000  errors=0         321/s  p50=   73.7 ms  p95=  388.6 ms  p99=  654.3 ms  wall=   9.3 s
+open 100 channels (seq)      wall=11.30 s
+WS message delivery          ok=1000  errors=0         331/s  p50= 1524.6 ms  p95= 2857.2 ms  p99= 2992.1 ms  wall=   3.0 s
+mixed: HTTP GET note         ok=3000  errors=0         288/s  p50=   96.5 ms  p95=  424.7 ms  p99=  891.2 ms  wall=  10.4 s
+mixed: WS message delivery   ok=1000  errors=0          96/s  p50= 1942.0 ms  p95= 3771.4 ms  p99= 4132.5 ms  wall=  10.4 s
+
+Прогон 2
+HTTP GET note                ok=3000  errors=0         338/s  p50=   77.5 ms  p95=  345.7 ms  p99=  578.2 ms  wall=   8.9 s
+open 100 channels (seq)      wall=11.25 s
+WS message delivery          ok=1000  errors=0         343/s  p50= 1503.1 ms  p95= 2774.4 ms  p99= 2876.1 ms  wall=   2.9 s
+mixed: HTTP GET note         ok=3000  errors=0         310/s  p50=   92.3 ms  p95=  399.4 ms  p99=  839.9 ms  wall=   9.7 s
+mixed: WS message delivery   ok=1000  errors=0         103/s  p50= 1897.4 ms  p95= 3583.7 ms  p99= 3824.4 ms  wall=   9.7 s
+
+Порог зависания HTTP (тот же зонд):
+concurrency=41   ok=41   errors=0    wall=  0.12s
+concurrency=60   ok=60   errors=0    wall=  0.20s   (до: 40 ошибок, 30,55 с)
+concurrency=100  ok=100  errors=0    wall=  0.26s
+concurrency=200  ok=200  errors=0    wall=  0.67s
+concurrency=500  ok=500  errors=0    wall=  5.34s
+
+Размер пула БД — тот же скрипт против второго uvicorn в контейнере app, без --reload:
+пул 5 + 10    HTTP GET 423/s  p50 72 ms  p95 257 ms  p99 394 ms   mixed 341/s   500 одновременно — 4,7 с
+пул 20 + 10   HTTP GET 439/s  p50 66 ms  p95 248 ms  p99 405 ms   mixed 340/s   500 одновременно — 5,2 с
+
+Итог:
+- ошибок нет ни в одном раунде; смешанная нагрузка — 10 с вместо 131 с с потерями;
+- зависания нет: async-ручка не держит поток, пока ждёт соединение;
+- медиана HTTP лучше (75 мс против 117), хвост p95 хуже (350–390 мс против 160–220). Вероятно,
+  потому что все 40 запросов по очереди продвигаются в одном цикле событий и каждый ждёт шагов
+  остальных; отдельно это не проверял;
+- больший пул БД ничего не меняет — упираемся в один процесс, а не в соединения. Пул оставлен;
+- заметная часть хвоста — от --reload (опрос файлов на смонтированной папке): без него 423/s и
+  p95 257 мс. В проде --reload не используют.
