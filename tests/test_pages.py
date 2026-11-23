@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 pytestmark = pytest.mark.anyio
@@ -29,6 +31,18 @@ async def test_static_files(client, path, content_type):
 
     assert response.status_code == 200
     assert content_type in response.headers["content-type"]
+
+
+async def test_fonts_in_stylesheet_are_served(client):
+    # Шрифт по неверному пути не ломает страницу: браузер молча берёт системный
+    css = (await client.get("/static/style.css")).text
+    urls = re.findall(r'url\("([^"]+)"\)', css)
+
+    assert urls and len(urls) == css.count("@font-face")
+    for url in urls:
+        response = await client.get(f"/static/{url}")
+        assert response.status_code == 200, url
+        assert response.content[:4] == b"wOF2", url
 
 
 async def test_pages_not_in_openapi(client):

@@ -75,6 +75,7 @@ app/
   utils/                      шифрование, подписанные ссылки, Range, тип файла, QR, токены
   jobs/, scheduler.py         периодическая чистка
   static/                     фронтенд без сборки: index.html, app.js, channel.js, files.js
+  static/fonts/               IBM Plex Sans и Mono (SIL OFL 1.1, тексты лицензий рядом)
 ```
 
 ## Асинхронность
