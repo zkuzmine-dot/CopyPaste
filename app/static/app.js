@@ -132,9 +132,9 @@ function setNote(note) {
     parts.push("Защищена паролем");
   }
   if (note.burn_after_read) {
-    parts.push("Удалится после первого прочтения");
+    parts.push("Удалится после прочтения");
   }
-  parts.push(note.expires_at ? `Удалится ${formatDate(note.expires_at)}` : "Хранится бессрочно");
+  parts.push(note.expires_at ? `Хранится до ${formatDate(note.expires_at)}` : "Хранится бессрочно");
   infoEl.textContent = parts.join(" · ");
 }
 
@@ -267,7 +267,7 @@ async function errorMessage(response) {
       const body = await response.json();
       if (typeof body.detail === "string") {
         // Файл привязать не удалось: загружен слишком давно или уже в другой заметке
-        return "Часть файлов недоступна — уберите их и загрузите заново";
+        return "Часть файлов устарела. Уберите их и загрузите заново";
       }
       const msg = body.detail?.[0]?.msg;
       if (msg) {
@@ -282,10 +282,14 @@ async function errorMessage(response) {
 }
 
 function burnFilesText(count) {
-  return count
-    ? `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}: ` +
-        "после открытия каждый можно скачать один раз в течение 10 минут."
-    : "";
+  if (!count) {
+    return "";
+  }
+  if (count === 1) {
+    return "В заметке 1 файл. После открытия его можно скачать один раз в течение 10 минут.";
+  }
+  return `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}. ` +
+    "После открытия каждый можно скачать один раз в течение 10 минут.";
 }
 
 // warn — заморозка: пароль тут ни при чём, поэтому без красной рамки у поля
@@ -334,10 +338,12 @@ function showUnlock(note) {
   const count = note.files.length;
   let info = "";
   if (note.burn_after_read) {
-    info = "После открытия заметка удалится с сервера — открыть её можно только один раз. " +
-      burnFilesText(count);
+    info = "Заметку можно открыть только один раз, потом она удалится. " + burnFilesText(count);
+  } else if (count === 1) {
+    info = "В заметке 1 файл. Он откроется вместе с текстом.";
   } else if (count) {
-    info = `В заметке ${count} ${plural(count, "файл", "файла", "файлов")} — они откроются вместе с текстом.`;
+    info = `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}. ` +
+      "Они откроются вместе с текстом.";
   }
   unlockInfoEl.textContent = info.trim();
   unlockInfoEl.hidden = !info;
@@ -356,14 +362,14 @@ async function unlockFailure(response) {
         return "Неверный пароль";
       }
       if (left === 0) {
-        return "Неверный пароль. Попытки закончились — ввод пароля временно заморожен";
+        return "Неверный пароль. Попытки закончились, попробуйте позже";
       }
       return `Неверный пароль. Осталось ${left} ${plural(left, "попытка", "попытки", "попыток")}`;
     }
     case 422:
-      return `Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`;
+      return `Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`;
     case 503:
-      return "Проверка пароля временно недоступна — попробуйте через минуту";
+      return "Проверка пароля временно недоступна. Попробуйте через минуту";
     default:
       return `Ошибка сервера (${response.status})`;
   }
@@ -378,7 +384,7 @@ async function unlockNote(event) {
   }
   const length = passwordLength(password);
   if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
-    showUnlockError(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`);
+    showUnlockError(`Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`);
     return;
   }
 
@@ -421,7 +427,7 @@ async function unlockNote(event) {
     showUnlockError(await unlockFailure(response));
     unlockPasswordEl.select();
   } catch {
-    showUnlockError("Не удалось связаться с сервером");
+    showUnlockError("Нет связи с сервером");
   } finally {
     // Во время заморозки кнопкой управляет отсчёт
     if (!unlockTimer) {
@@ -469,7 +475,7 @@ async function loadNote(slug) {
     }
     showNote(note);
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   }
 }
 
@@ -480,10 +486,10 @@ function showNote(note) {
     // Заметки на сервере больше нет — делиться нечем
     setNote(null);
     noteTitleEl.textContent = "Заметка";
-    infoEl.textContent = "Заметка удалена с сервера — это был единственный просмотр";
+    infoEl.textContent = "Заметка удалена с сервера. Это был единственный просмотр";
     renderNoteFiles(
       note.files,
-      "Каждый файл можно скачать один раз в течение 10 минут — после этого он удалится.",
+      "Каждый файл можно скачать один раз в течение 10 минут.",
     );
   } else {
     setNote(note);
@@ -510,7 +516,7 @@ async function revealNote() {
     }
     showNote(await response.json());
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   }
 }
 
@@ -529,7 +535,7 @@ async function saveNote() {
     .filter((upload) => upload.state === "done")
     .map((upload) => upload.id);
   if (!text.trim() && fileIds.length === 0) {
-    showStatus("Нечего сохранять — нет ни текста, ни файлов", "error");
+    showStatus("Добавьте текст или файл", "error");
     return;
   }
 
@@ -542,7 +548,7 @@ async function saveNote() {
   if (password) {
     const length = passwordLength(password);
     if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
-      showStatus(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
+      showStatus(`Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
       // В свёрнутых параметрах поле не видно — фокус ушёл бы в никуда
       setOptionsExpanded(true);
       passwordEl.focus();
@@ -579,7 +585,7 @@ async function saveNote() {
       showShareStatus("Сохранено");
     }
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   } finally {
     setBusy(false);
   }
@@ -607,7 +613,7 @@ async function copyToClipboard(value) {
 
 async function copyText() {
   if (!textEl.value) {
-    showStatus("Нечего копировать — поле пустое", "error");
+    showStatus("Нечего копировать: поле пустое", "error");
     return;
   }
   try {
@@ -624,7 +630,7 @@ async function shareLink() {
     showShareStatus("Ссылка скопирована");
   } catch {
     shareUrlEl.select();
-    showShareStatus("Не удалось скопировать — ссылка выделена, скопируйте её вручную", "error");
+    showShareStatus("Не удалось скопировать. Ссылка выделена, скопируйте её вручную", "error");
   }
 }
 

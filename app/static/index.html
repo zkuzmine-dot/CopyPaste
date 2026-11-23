@@ -32,8 +32,8 @@
       <section class="home-section live" aria-labelledby="home-channel-title">
         <h2 id="home-channel-title" class="home-section-title">Канал</h2>
         <p class="home-section-text">
-          Обмен между двумя устройствами в реальном времени. Текст живёт минуту, файл — пять
-          минут или до скачивания.
+          Текст и файлы между двумя устройствами в реальном времени. Сообщения исчезают через
+          несколько минут.
         </p>
         <button id="choose-channel" class="button primary" type="button">Открыть канал</button>
 
@@ -60,9 +60,9 @@
     <div id="note-view" class="note-view" hidden>
       <section id="burn-confirm" class="gate" aria-labelledby="burn-title" hidden>
         <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-        <h1 id="burn-title" class="gate-title">Эта заметка удалится сразу после просмотра</h1>
+        <h1 id="burn-title" class="gate-title">Заметка удалится после просмотра</h1>
         <p class="gate-text">
-          Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
+          Открыть её можно только один раз. Если текст понадобится позже, скопируйте его.
         </p>
         <p id="burn-files" class="gate-text" hidden></p>
         <button id="burn-reveal" class="button primary gate-action" type="button">Показать заметку</button>
@@ -121,7 +121,7 @@
         <textarea
           id="text"
           class="editor"
-          placeholder="Вставьте или напишите текст… Файлы можно перетащить сюда или вставить через Ctrl+V"
+          placeholder="Вставьте текст или перетащите сюда файлы"
           maxlength="100000"
           spellcheck="false"
         ></textarea>
@@ -187,7 +187,7 @@
                   <button id="toggle-password" class="button" type="button">Показать</button>
                 </div>
                 <p id="password-hint" class="files-hint" hidden>
-                  Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
+                  Текст и файлы будут зашифрованы. Забытый пароль не восстановить.
                 </p>
               </div>
             </div>
@@ -195,7 +195,7 @@
         </section>
 
         <div class="actions">
-          <span class="shortcut"><kbd>Ctrl+S</kbd> — сохранить</span>
+          <span class="shortcut"><kbd>Ctrl+S</kbd> сохраняет заметку</span>
           <div class="buttons">
             <button id="copy" class="button" type="button">Скопировать текст</button>
             <button id="save" class="button primary" type="button">Сохранить</button>
@@ -241,7 +241,7 @@
         <textarea
           id="channel-text"
           class="editor compose-editor"
-          placeholder="Текст для второго устройства… (Ctrl+Enter — отправить). Файлы — перетащите сюда или Ctrl+V"
+          placeholder="Текст или файлы для второго устройства. Ctrl+Enter отправляет"
           maxlength="100000"
           spellcheck="false"
         ></textarea>
@@ -261,7 +261,7 @@
           <h2 id="feed-title" class="section-title">
             Сообщения <span class="section-count">сначала новые</span>
           </h2>
-          <span class="feed-note">Текст живёт минуту, файл — 5 минут или до скачивания</span>
+          <span class="feed-note">Текст живёт 1 минуту, файл 5 минут или до скачивания</span>
         </div>
         <p id="feed-empty" class="feed-empty">Сообщений пока нет.</p>
         <ul id="feed" class="feed"></ul>

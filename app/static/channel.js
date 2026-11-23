@@ -111,7 +111,7 @@ async function startChannel() {
     history.pushState(null, "", `/c/${encodeURIComponent(created.slug)}`);
     route();
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   } finally {
     setStarting(false);
   }
@@ -140,7 +140,7 @@ async function joinChannel(slug) {
       method: "POST",
     });
     if (response.status === 404) {
-      showClosed("Канал не найден", "Он закрылся из-за бездействия или ссылка неверная.");
+      showClosed("Канал не найден", "Он закрылся из-за бездействия или в ссылке ошибка.");
       return null;
     }
     if (response.status === 409) {
@@ -270,7 +270,7 @@ function errorText(event) {
     case "not_receiver":
       return "Вы уже отправитель";
     case "rate_limited":
-      return "Слишком часто — подождите секунду";
+      return "Слишком часто. Подождите секунду";
     case "file_not_found":
       return "Файл не отправлен: его уже отправили или загрузка устарела";
     case "invalid_event":
@@ -289,16 +289,16 @@ function handleClose(code) {
       return;
     case CLOSE_NOT_FOUND:
       forgetToken(slug);
-      showClosed("Канал не найден", "Он закрылся из-за бездействия или ссылка неверная.");
+      showClosed("Канал не найден", "Он закрылся из-за бездействия или в ссылке ошибка.");
       return;
     case CLOSE_UNAUTHORIZED:
       forgetToken(slug);
-      showClosed("Нет доступа к каналу", "Сохранённый ключ участника не подошёл.");
+      showClosed("Нет доступа к каналу", "Ключ участника на этом устройстве не подошёл.");
       return;
     case CLOSE_REPLACED:
       showClosed(
         "Канал открыт в другой вкладке",
-        "Одно устройство — одно подключение. Здесь канал отключён.",
+        "Здесь он отключён: одно устройство подключается только из одной вкладки.",
         "Открыть здесь",
         () => {
           channelClosedEl.hidden = true;
@@ -308,7 +308,7 @@ function handleClose(code) {
       return;
   }
   if (code === CLOSE_MESSAGE_TOO_BIG) {
-    showStatus("Сообщение слишком большое — сервер его не принял", "error");
+    showStatus("Сообщение слишком большое, сервер его не принял", "error");
   }
   // Обрыв связи (сон телефона, смена сети): переподключаемся с растущей паузой
   const delay = Math.min(1000 * 2 ** channel.retries, RECONNECT_MAX_DELAY);
@@ -317,7 +317,7 @@ function handleClose(code) {
   channel.retryTimer = setTimeout(connect, delay);
 }
 
-function showClosed(title, text, actionLabel = "Начать новый обмен", action = startChannel) {
+function showClosed(title, text, actionLabel = "Открыть новый канал", action = startChannel) {
   clearInterval(channel.tickTimer);
   channel.tickTimer = null;
   channel.role = null;
@@ -424,7 +424,7 @@ function addMessage(message) {
   if (message.kind === "file" && message.file) {
     item.classList.add("file");
     card = createFileCard(message.file, {
-      status: isOwnFile(message) ? "Ждёт скачивания получателем" : "",
+      status: isOwnFile(message) ? "Ждёт скачивания" : "",
     });
     body.append(card.el, left);
   } else {
@@ -471,7 +471,7 @@ async function copyMessage(text) {
 function sendMessage() {
   const text = channelTextEl.value;
   if (!text.trim()) {
-    showStatus("Нечего отправлять — поле пустое", "error");
+    showStatus("Нечего отправлять: поле пустое", "error");
     return;
   }
   if (!channel.ws || channel.ws.readyState !== WebSocket.OPEN) {
@@ -561,7 +561,7 @@ function joinByCode(event) {
   event.preventDefault();
   const code = parseChannelCode(joinCodeEl.value);
   if (!code) {
-    showStatus("Код — 8 символов: латинские буквы и цифры", "error");
+    showStatus("Код: 8 латинских букв и цифр", "error");
     joinCodeEl.focus();
     return;
   }

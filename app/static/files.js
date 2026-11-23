@@ -71,7 +71,7 @@ function uploadErrorText(status) {
     case 413:
       return `Больше ${formatSize(MAX_FILE_SIZE)}`;
     case 429:
-      return "Слишком много загрузок — подождите минуту";
+      return "Слишком много загрузок. Подождите минуту";
     case 507:
       return "Хранилище переполнено";
     default:
@@ -381,7 +381,7 @@ function createFileCard(file, { status = "", onReceived } = {}) {
           return;
         }
         button.textContent = "Продолжить";
-        statusEl.textContent = "Связь оборвалась — можно продолжить с того же места";
+        statusEl.textContent = "Связь оборвалась. Можно продолжить с того же места";
         card.classList.add("interrupted");
       }
     });
