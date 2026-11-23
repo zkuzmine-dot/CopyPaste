@@ -15,9 +15,10 @@ const burnConfirmEl = document.getElementById("burn-confirm");
 const burnRevealBtn = document.getElementById("burn-reveal");
 const saveBtn = document.getElementById("save");
 const copyBtn = document.getElementById("copy");
-const shareBtn = document.getElementById("share");
 const statusEl = document.getElementById("status");
-const shareDialog = document.getElementById("share-dialog");
+const noteTitleEl = document.getElementById("note-title");
+const sharePanelEl = document.getElementById("share-panel");
+const shareStatusEl = document.getElementById("share-status");
 const shareUrlEl = document.getElementById("share-url");
 const shareCopyBtn = document.getElementById("share-copy");
 const shareQrEl = document.getElementById("share-qr");
@@ -25,16 +26,24 @@ const shareQrDownload = document.getElementById("share-qr-download");
 const homeViewEl = document.getElementById("home-view");
 const noteViewEl = document.getElementById("note-view");
 const channelViewEl = document.getElementById("channel-view");
+const aboutViewEl = document.getElementById("about-view");
+const navNoteEl = document.getElementById("nav-note");
+const navChannelEl = document.getElementById("nav-channel");
 const attachBtn = document.getElementById("attach");
 const attachInput = document.getElementById("attach-input");
 const attachmentListEl = document.getElementById("attachment-list");
+const filesCountEl = document.getElementById("files-count");
 const noteFilesEl = document.getElementById("note-files");
 const noteFilesHintEl = document.getElementById("note-files-hint");
 const burnFilesEl = document.getElementById("burn-files");
 const passwordEl = document.getElementById("note-password");
 const passwordToggleBtn = document.getElementById("toggle-password");
 const passwordHintEl = document.getElementById("password-hint");
+const optionsEl = document.getElementById("options");
+const optionsToggleBtn = document.getElementById("options-toggle");
+const optionsSummaryEl = document.getElementById("options-summary");
 const unlockEl = document.getElementById("unlock");
+const notFoundEl = document.getElementById("not-found");
 const unlockInfoEl = document.getElementById("unlock-info");
 const unlockFormEl = document.getElementById("unlock-form");
 const unlockPasswordEl = document.getElementById("unlock-password");
@@ -83,9 +92,37 @@ function formatDate(iso) {
   });
 }
 
+function setTitle(slug) {
+  if (!slug) {
+    noteTitleEl.textContent = "Новая заметка";
+    return;
+  }
+  const code = el("span", "editor-slug", slug);
+  noteTitleEl.replaceChildren("Заметка ", code);
+}
+
+function showShareStatus(message, kind = "success") {
+  shareStatusEl.textContent = message;
+  shareStatusEl.className = `share-status ${kind}`;
+}
+
+function showSharePanel(slug) {
+  sharePanelEl.hidden = !slug;
+  showShareStatus("");
+  if (!slug) {
+    return;
+  }
+  const qrUrl = `${API_URL}/${encodeURIComponent(slug)}/qr`;
+  shareUrlEl.value = noteUrl(slug);
+  shareQrEl.src = qrUrl;
+  shareQrDownload.href = qrUrl;
+  shareQrDownload.download = `copypaste-${slug}.svg`;
+}
+
 function setNote(note) {
   currentSlug = note ? note.slug : null;
-  shareBtn.disabled = !currentSlug;
+  setTitle(currentSlug);
+  showSharePanel(currentSlug);
 
   if (!note) {
     infoEl.textContent = "";
@@ -96,9 +133,9 @@ function setNote(note) {
     parts.push("Защищена паролем");
   }
   if (note.burn_after_read) {
-    parts.push("Удалится после первого прочтения");
+    parts.push("Удалится после прочтения");
   }
-  parts.push(note.expires_at ? `Удалится ${formatDate(note.expires_at)}` : "Хранится бессрочно");
+  parts.push(note.expires_at ? `Хранится до ${formatDate(note.expires_at)}` : "Хранится бессрочно");
   infoEl.textContent = parts.join(" · ");
 }
 
@@ -106,6 +143,7 @@ function showScreen(name) {
   editorAreaEl.hidden = name !== "editor";
   burnConfirmEl.hidden = name !== "burn";
   unlockEl.hidden = name !== "unlock";
+  notFoundEl.hidden = name !== "missing";
 }
 
 function passwordLength(value) {
@@ -118,6 +156,24 @@ function resetPasswordField() {
   passwordEl.type = "password";
   passwordToggleBtn.textContent = "Показать";
   passwordHintEl.hidden = true;
+  updateOptionsSummary();
+}
+
+// На телефоне параметры свёрнуты в строку: по ней видно, что выбрано, не раскрывая
+function updateOptionsSummary() {
+  const parts = [expiryEl.querySelector("input:checked").nextElementSibling.textContent];
+  if (burnEl.checked) {
+    parts.push("одноразовая");
+  }
+  if (passwordEl.value) {
+    parts.push("с паролем");
+  }
+  optionsSummaryEl.textContent = parts.join(" · ");
+}
+
+function setOptionsExpanded(expanded) {
+  optionsEl.classList.toggle("expanded", expanded);
+  optionsToggleBtn.setAttribute("aria-expanded", String(expanded));
 }
 
 function togglePasswordVisibility() {
@@ -141,6 +197,12 @@ function setBusy(busy) {
   updateSaveButton();
 }
 
+function updateFilesCount() {
+  filesCountEl.textContent = attachments.length
+    ? `${attachments.length} из ${MAX_NOTE_FILES}`
+    : "";
+}
+
 function addAttachments(files) {
   const room = MAX_NOTE_FILES - attachments.length;
   if (room <= 0) {
@@ -158,11 +220,13 @@ function addAttachments(files) {
       onRemoved: (removed) => {
         attachments = attachments.filter((item) => item !== removed);
         updateSaveButton();
+        updateFilesCount();
       },
     });
     attachments.push(upload);
   }
   updateSaveButton();
+  updateFilesCount();
 }
 
 function clearAttachments() {
@@ -173,6 +237,7 @@ function clearAttachments() {
   attachments = [];
   attachmentListEl.replaceChildren();
   updateSaveButton();
+  updateFilesCount();
 }
 
 function clearNoteFiles() {
@@ -203,7 +268,7 @@ async function errorMessage(response) {
       const body = await response.json();
       if (typeof body.detail === "string") {
         // Файл привязать не удалось: загружен слишком давно или уже в другой заметке
-        return "Часть файлов недоступна — уберите их и загрузите заново";
+        return "Часть файлов устарела. Уберите их и загрузите заново";
       }
       const msg = body.detail?.[0]?.msg;
       if (msg) {
@@ -218,21 +283,34 @@ async function errorMessage(response) {
 }
 
 function burnFilesText(count) {
-  return count
-    ? `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}: ` +
-        "после открытия каждый можно скачать один раз в течение 10 минут."
-    : "";
+  if (!count) {
+    return "";
+  }
+  if (count === 1) {
+    return "В заметке 1 файл. После открытия его можно скачать один раз в течение 10 минут.";
+  }
+  return `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}. ` +
+    "После открытия каждый можно скачать один раз в течение 10 минут.";
 }
 
-function showUnlockError(message) {
+// warn — заморозка: пароль тут ни при чём, поэтому без красной рамки у поля
+function showUnlockError(message, kind = "error") {
   unlockErrorEl.textContent = message;
+  unlockErrorEl.className = `unlock-error ${kind}`;
   unlockErrorEl.hidden = !message;
+  if (message && kind === "error") {
+    unlockPasswordEl.setAttribute("aria-invalid", "true");
+  } else {
+    unlockPasswordEl.removeAttribute("aria-invalid");
+  }
 }
 
 function stopUnlockCountdown() {
   clearInterval(unlockTimer);
   unlockTimer = null;
   unlockSubmitBtn.disabled = false;
+  unlockSubmitBtn.textContent = "Открыть";
+  unlockPasswordEl.disabled = false;
 }
 
 function startUnlockCountdown(seconds) {
@@ -247,9 +325,12 @@ function startUnlockCountdown(seconds) {
       return;
     }
     const wait = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-    showUnlockError(`Слишком много неверных попыток. Попробуйте снова через ${wait}`);
+    unlockSubmitBtn.textContent = `Открыть через ${wait}`;
   };
   unlockSubmitBtn.disabled = true;
+  unlockPasswordEl.value = "";
+  unlockPasswordEl.disabled = true;
+  showUnlockError("Слишком много неверных попыток", "warn");
   tick();
   unlockTimer = setInterval(tick, 1000);
 }
@@ -258,10 +339,12 @@ function showUnlock(note) {
   const count = note.files.length;
   let info = "";
   if (note.burn_after_read) {
-    info = "После открытия заметка удалится с сервера — открыть её можно только один раз. " +
-      burnFilesText(count);
+    info = "Заметку можно открыть только один раз, потом она удалится. " + burnFilesText(count);
+  } else if (count === 1) {
+    info = "В заметке 1 файл. Он откроется вместе с текстом.";
   } else if (count) {
-    info = `В заметке ${count} ${plural(count, "файл", "файла", "файлов")} — они откроются вместе с текстом.`;
+    info = `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}. ` +
+      "Они откроются вместе с текстом.";
   }
   unlockInfoEl.textContent = info.trim();
   unlockInfoEl.hidden = !info;
@@ -280,14 +363,14 @@ async function unlockFailure(response) {
         return "Неверный пароль";
       }
       if (left === 0) {
-        return "Неверный пароль. Попытки закончились — ввод пароля временно заморожен";
+        return "Неверный пароль. Попытки закончились, попробуйте позже";
       }
       return `Неверный пароль. Осталось ${left} ${plural(left, "попытка", "попытки", "попыток")}`;
     }
     case 422:
-      return `Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`;
+      return `Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`;
     case 503:
-      return "Проверка пароля временно недоступна — попробуйте через минуту";
+      return "Проверка пароля временно недоступна. Попробуйте через минуту";
     default:
       return `Ошибка сервера (${response.status})`;
   }
@@ -302,7 +385,7 @@ async function unlockNote(event) {
   }
   const length = passwordLength(password);
   if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
-    showUnlockError(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`);
+    showUnlockError(`Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`);
     return;
   }
 
@@ -329,8 +412,7 @@ async function unlockNote(event) {
     }
     if (response.status === 404) {
       pendingSlug = null;
-      showScreen("editor");
-      showStatus(await errorMessage(response), "error");
+      showScreen("missing");
       return;
     }
     // Retry-After приходит с 429 и с той неверной попыткой (403), что включила заморозку
@@ -340,16 +422,17 @@ async function unlockNote(event) {
       return;
     }
     if (response.status === 429) {
-      showUnlockError("Слишком много неверных попыток. Попробуйте позже");
+      showUnlockError("Слишком много неверных попыток. Попробуйте позже", "warn");
       return;
     }
     showUnlockError(await unlockFailure(response));
     unlockPasswordEl.select();
   } catch {
-    showUnlockError("Не удалось связаться с сервером");
+    showUnlockError("Нет связи с сервером");
   } finally {
-    unlockSubmitBtn.textContent = "Открыть";
+    // Во время заморозки кнопкой управляет отсчёт
     if (!unlockTimer) {
+      unlockSubmitBtn.textContent = "Открыть";
       unlockSubmitBtn.disabled = false;
     }
   }
@@ -369,6 +452,10 @@ async function loadNote(slug) {
   try {
     // GET ничего не сжигает: у одноразовой заметки text придёт как null
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}`);
+    if (response.status === 404) {
+      showScreen("missing");
+      return;
+    }
     if (!response.ok) {
       showStatus(await errorMessage(response), "error");
       return;
@@ -389,7 +476,7 @@ async function loadNote(slug) {
     }
     showNote(note);
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   }
 }
 
@@ -399,10 +486,11 @@ function showNote(note) {
   if (note.burn_after_read) {
     // Заметки на сервере больше нет — делиться нечем
     setNote(null);
-    infoEl.textContent = "Заметка удалена с сервера — это был единственный просмотр";
+    noteTitleEl.textContent = "Заметка";
+    infoEl.textContent = "Заметка удалена с сервера. Это был единственный просмотр";
     renderNoteFiles(
       note.files,
-      "Каждый файл можно скачать один раз в течение 10 минут — после этого он удалится.",
+      "Каждый файл можно скачать один раз в течение 10 минут.",
     );
   } else {
     setNote(note);
@@ -418,17 +506,27 @@ async function revealNote() {
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}/read`, {
       method: "POST",
     });
+    // Её успел прочитать кто-то другой
+    if (response.status === 404) {
+      showScreen("missing");
+      return;
+    }
     if (!response.ok) {
       showStatus(await errorMessage(response), "error");
       return;
     }
     showNote(await response.json());
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   }
 }
 
 async function saveNote() {
+  // Кнопка выключена, пока идёт сохранение или грузятся файлы. Клавиши обходят кнопку:
+  // без проверки они сохранили бы заметку без недогруженных файлов или вторую копию
+  if (saveBtn.disabled) {
+    return;
+  }
   if (attachments.some((upload) => upload.state === "error")) {
     showStatus("Уберите файлы с ошибкой или загрузите их снова", "error");
     return;
@@ -438,12 +536,12 @@ async function saveNote() {
     .filter((upload) => upload.state === "done")
     .map((upload) => upload.id);
   if (!text.trim() && fileIds.length === 0) {
-    showStatus("Нечего сохранять — нет ни текста, ни файлов", "error");
+    showStatus("Добавьте текст или файл", "error");
     return;
   }
 
   const body = { text, file_ids: fileIds, burn_after_read: burnEl.checked };
-  const seconds = Number(expiryEl.value);
+  const seconds = Number(expiryEl.querySelector("input:checked").value);
   if (seconds > 0) {
     body.expires_at = new Date(Date.now() + seconds * 1000).toISOString();
   }
@@ -451,7 +549,9 @@ async function saveNote() {
   if (password) {
     const length = passwordLength(password);
     if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
-      showStatus(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
+      showStatus(`Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
+      // В свёрнутых параметрах поле не видно — фокус ушёл бы в никуда
+      setOptionsExpanded(true);
       passwordEl.focus();
       return;
     }
@@ -478,9 +578,15 @@ async function saveNote() {
       note.files,
       note.has_password ? "Скачать файлы можно будет после ввода пароля." : "",
     );
-    showStatus("Сохранено");
+    statusEl.textContent = "";
+    try {
+      await copyToClipboard(noteUrl(note.slug));
+      showShareStatus("Сохранено, ссылка скопирована");
+    } catch {
+      showShareStatus("Сохранено");
+    }
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   } finally {
     setBusy(false);
   }
@@ -508,7 +614,7 @@ async function copyToClipboard(value) {
 
 async function copyText() {
   if (!textEl.value) {
-    showStatus("Нечего копировать — поле пустое", "error");
+    showStatus("Нечего копировать: поле пустое", "error");
     return;
   }
   try {
@@ -519,26 +625,21 @@ async function copyText() {
   }
 }
 
-function openShareDialog() {
-  if (!currentSlug) {
-    return;
-  }
-  const qrUrl = `${API_URL}/${encodeURIComponent(currentSlug)}/qr`;
-  shareUrlEl.value = noteUrl(currentSlug);
-  shareQrEl.src = qrUrl;
-  shareQrDownload.href = qrUrl;
-  shareQrDownload.download = `copypaste-${currentSlug}.svg`;
-  shareDialog.showModal();
-  shareUrlEl.select();
-}
-
 async function shareLink() {
   try {
     await copyToClipboard(shareUrlEl.value);
-    shareDialog.close();
-    showStatus("Ссылка скопирована");
+    showShareStatus("Ссылка скопирована");
   } catch {
-    showStatus("Не удалось скопировать ссылку", "error");
+    shareUrlEl.select();
+    showShareStatus("Не удалось скопировать. Ссылка выделена, скопируйте её вручную", "error");
+  }
+}
+
+function markCurrent(navEl, current) {
+  if (current) {
+    navEl.setAttribute("aria-current", "page");
+  } else {
+    navEl.removeAttribute("aria-current");
   }
 }
 
@@ -546,6 +647,9 @@ function showView(name) {
   homeViewEl.hidden = name !== "home";
   noteViewEl.hidden = name !== "note";
   channelViewEl.hidden = name !== "channel";
+  aboutViewEl.hidden = name !== "about";
+  markCurrent(navNoteEl, name === "note");
+  markCurrent(navChannelEl, name === "channel");
 }
 
 function route() {
@@ -574,6 +678,12 @@ function route() {
     clearNoteFiles();
     resetPasswordField();
     textEl.focus();
+  } else if (location.pathname === "/about") {
+    showView("about");
+    // При загрузке раздел был скрыт, и браузер не докрутил до якоря — докручиваем сами
+    if (location.hash) {
+      document.getElementById(location.hash.slice(1))?.scrollIntoView();
+    }
   } else {
     showView("home");
   }
@@ -582,13 +692,18 @@ function route() {
 textEl.addEventListener("input", updateCounter);
 saveBtn.addEventListener("click", saveNote);
 copyBtn.addEventListener("click", copyText);
-shareBtn.addEventListener("click", openShareDialog);
 shareCopyBtn.addEventListener("click", shareLink);
 burnRevealBtn.addEventListener("click", revealNote);
 unlockFormEl.addEventListener("submit", unlockNote);
 passwordToggleBtn.addEventListener("click", togglePasswordVisibility);
 passwordEl.addEventListener("input", () => {
   passwordHintEl.hidden = !passwordEl.value;
+  updateOptionsSummary();
+});
+expiryEl.addEventListener("change", updateOptionsSummary);
+burnEl.addEventListener("change", updateOptionsSummary);
+optionsToggleBtn.addEventListener("click", () => {
+  setOptionsExpanded(!optionsEl.classList.contains("expanded"));
 });
 passwordEl.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -599,16 +714,11 @@ passwordEl.addEventListener("keydown", (event) => {
 bindFilePicker(attachBtn, attachInput, addAttachments);
 acceptDroppedAndPasted(editorAreaEl, textEl, addAttachments);
 
-// Клик по затемнённому фону вокруг окна закрывает его
-shareDialog.addEventListener("click", (event) => {
-  const rect = shareDialog.getBoundingClientRect();
-  const outside =
-    event.clientX < rect.left ||
-    event.clientX > rect.right ||
-    event.clientY < rect.top ||
-    event.clientY > rect.bottom;
-  if (outside) {
-    shareDialog.close();
+// Новая заметка уже открыта: переход по ссылке перезагрузил бы страницу и стёр набранное
+navNoteEl.addEventListener("click", (event) => {
+  if (location.pathname === "/note") {
+    event.preventDefault();
+    textEl.focus();
   }
 });
 
@@ -619,7 +729,18 @@ textEl.addEventListener("keydown", (event) => {
   }
 });
 
+// Ctrl+S — по физической клавише: на русской раскладке event.key здесь «ы»
+document.addEventListener("keydown", (event) => {
+  const editing = !noteViewEl.hidden && !editorAreaEl.hidden;
+  if (editing && (event.ctrlKey || event.metaKey) && event.code === "KeyS") {
+    event.preventDefault();
+    saveNote();
+  }
+});
+
 // Кнопки «назад/вперёд» в браузере меняют адрес без перезагрузки страницы
 window.addEventListener("popstate", route);
 
+// При перезагрузке браузер может вернуть отметки в полях — итог должен им соответствовать
+updateOptionsSummary();
 route();

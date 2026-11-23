@@ -355,14 +355,16 @@ async def test_idle_channel_is_closed(client, channel, monkeypatch):
 
 
 async def test_activity_postpones_idle_close(client, channel, monkeypatch):
-    monkeypatch.setattr(settings, "CHANNEL_IDLE_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(settings, "CHANNEL_IDLE_TIMEOUT_SECONDS", 3)
 
     async with connect(client, channel["slug"]) as sender:
         await auth(sender, channel["sender"])
-        # Каждое сообщение сдвигает last_activity_at: за 1,6 с канал не закрылся
+        # Каждое сообщение сдвигает last_activity_at: за 3,2 с при таймауте 3 с канал не
+        # закрылся. Запас на промежуток — 2,2 с: таймер сверяется с часами БД, а их задержка
+        # или прыжок (в Docker Desktop — до 1,6 с) при запасе в доли секунды закрывали канал
         for i in range(5):
             if i:
-                await anyio.sleep(0.4)
+                await anyio.sleep(0.8)
             await sender.send_json({"type": "send", "text": str(i)})
             assert (await sender.receive_json())["text"] == str(i)
 

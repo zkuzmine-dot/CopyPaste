@@ -7,167 +7,241 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <main class="page">
-    <header class="header">
+  <header class="header">
+    <div class="header-inner">
       <a class="logo" href="/">CopyPaste</a>
-      <a class="new-link" href="/note">Новая заметка</a>
-    </header>
+      <nav class="nav" aria-label="Разделы">
+        <a id="nav-note" class="nav-item" href="/note">Заметка</a>
+        <button id="nav-channel" class="nav-item" type="button">Канал</button>
+      </nav>
+    </div>
+  </header>
 
+  <main class="page">
     <section id="home-view" class="home" hidden>
-      <h1 class="home-title">Что хотите сделать?</h1>
-      <div class="choices">
-        <button id="choose-channel" class="choice" type="button">
-          <span class="choice-title">Обмен между устройствами</span>
-          <span class="choice-text">
-            Откройте канал на втором устройстве по QR-коду — текст и файлы будут приходить
-            мгновенно и исчезать через несколько минут.
-          </span>
-        </button>
-        <a class="choice" href="/note">
-          <span class="choice-title">Сохранить заметку</span>
-          <span class="choice-text">
-            Сохраните текст и до 10 файлов, поделитесь ссылкой. Можно задать срок хранения
-            или удалить после прочтения.
-          </span>
-        </a>
-      </div>
+      <h1 class="visually-hidden">CopyPaste: заметки и обмен между устройствами</h1>
 
-      <form id="join-form" class="join-form">
-        <label class="join-label" for="join-code">Уже есть код канала?</label>
-        <div class="share-link-row">
-          <input
-            id="join-code"
-            class="share-url"
-            type="text"
-            placeholder="Код из 8 символов или ссылка"
-            autocomplete="off"
-            autocapitalize="none"
-            spellcheck="false"
-            maxlength="200"
-          >
-          <button class="button primary" type="submit">Подключиться</button>
-        </div>
-      </form>
+      <section class="home-section" aria-labelledby="home-note-title">
+        <h2 id="home-note-title" class="home-section-title">Заметка</h2>
+        <p class="home-section-text">
+          Текст и до 10 файлов по ссылке или QR-коду. Срок хранения, одноразовое чтение, пароль.
+        </p>
+        <a class="button primary" href="/note">Новая заметка</a>
+      </section>
+
+      <section class="home-section live" aria-labelledby="home-channel-title">
+        <h2 id="home-channel-title" class="home-section-title">Канал</h2>
+        <p class="home-section-text">
+          Текст и файлы между двумя устройствами в реальном времени. Сообщения исчезают через
+          несколько минут.
+        </p>
+        <button id="choose-channel" class="button primary" type="button">Открыть канал</button>
+
+        <form id="join-form" class="join-form">
+          <label class="join-label" for="join-code">Код канала</label>
+          <div class="share-link-row">
+            <input
+              id="join-code"
+              class="share-url"
+              type="text"
+              placeholder="8 символов или ссылка"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="200"
+            >
+            <button class="button" type="submit">Подключиться</button>
+          </div>
+          <p class="join-hint">Код показан на втором устройстве под QR-кодом.</p>
+        </form>
+      </section>
     </section>
 
     <div id="note-view" class="note-view" hidden>
-      <section id="burn-confirm" class="burn-confirm" hidden>
-        <h2 class="burn-confirm-title">Эта заметка удалится сразу после просмотра</h2>
-        <p class="burn-confirm-text">
-          Открыть её можно только один раз. Если текст понадобится потом — скопируйте его.
+      <section id="burn-confirm" class="gate" aria-labelledby="burn-title" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <h1 id="burn-title" class="gate-title">Заметка удалится после просмотра</h1>
+        <p class="gate-text">
+          Открыть её можно только один раз. Если текст понадобится позже, скопируйте его.
         </p>
-        <p id="burn-files" class="burn-confirm-text" hidden></p>
-        <button id="burn-reveal" class="button primary" type="button">Показать заметку</button>
+        <p id="burn-files" class="gate-text" hidden></p>
+        <button id="burn-reveal" class="button primary gate-action" type="button">Показать заметку</button>
       </section>
 
-      <section id="unlock" class="burn-confirm" hidden>
-        <h2 class="burn-confirm-title">Заметка защищена паролем</h2>
-        <p id="unlock-info" class="burn-confirm-text" hidden></p>
-        <form id="unlock-form" class="unlock-form">
+      <section id="unlock" class="gate" aria-labelledby="unlock-title" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="1"></rect><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"></path></svg>
+        <h1 id="unlock-title" class="gate-title">Заметка защищена паролем</h1>
+        <p id="unlock-info" class="gate-text" hidden></p>
+        <form id="unlock-form" class="gate-form">
+          <label class="gate-label" for="unlock-password">Пароль</label>
           <input
             id="unlock-password"
             class="password-input"
             type="password"
-            placeholder="Пароль"
             autocomplete="current-password"
+            aria-describedby="unlock-error"
             maxlength="128"
             required
           >
-          <button id="unlock-submit" class="button primary" type="submit">Открыть</button>
+          <p id="unlock-error" class="unlock-error" role="alert" hidden></p>
+          <button id="unlock-submit" class="button primary gate-action" type="submit">Открыть</button>
         </form>
-        <p id="unlock-error" class="unlock-error" role="alert" hidden></p>
+      </section>
+
+      <section id="not-found" class="gate" aria-labelledby="not-found-title" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5"></path><path d="M9.5 13.5l5 5M14.5 13.5l-5 5"></path></svg>
+        <h1 id="not-found-title" class="gate-title">Заметка не найдена</h1>
+        <p class="gate-text">Срок её хранения истёк, её уже прочитали или в ссылке ошибка.</p>
+        <a class="button primary gate-action" href="/note">Новая заметка</a>
       </section>
 
       <div id="editor-area" class="editor-area">
+        <div class="editor-head">
+          <label id="note-title" class="editor-title" for="text">Новая заметка</label>
+          <span id="counter" class="counter">0 / 100 000</span>
+        </div>
+        <p id="info" class="info"></p>
+
+        <section id="share-panel" class="share-panel" aria-label="Поделиться заметкой" hidden>
+          <img id="share-qr" class="share-qr" alt="QR-код со ссылкой на заметку" width="132" height="132">
+          <div class="share-body">
+            <label class="share-label" for="share-url">Ссылка на заметку</label>
+            <div class="share-link-row">
+              <input id="share-url" class="share-url" type="text" readonly>
+              <button id="share-copy" class="button primary" type="button">Скопировать</button>
+            </div>
+            <p id="share-status" class="share-status" role="status"></p>
+            <div class="share-extra">
+              <a id="share-qr-download" class="share-download" download>Скачать QR-код</a>
+              <span>QR-код открывает заметку на телефоне</span>
+            </div>
+          </div>
+        </section>
+
         <textarea
           id="text"
           class="editor"
-          placeholder="Вставьте или напишите текст… Файлы можно перетащить сюда или вставить через Ctrl+V"
+          placeholder="Вставьте текст или перетащите сюда файлы"
           maxlength="100000"
           spellcheck="false"
         ></textarea>
 
-        <div class="meta">
-          <span id="info" class="info"></span>
-          <span id="counter" class="counter">0 / 100 000</span>
-        </div>
+        <section class="note-section" aria-labelledby="files-title">
+          <div class="section-head">
+            <h2 id="files-title" class="section-title">
+              Файлы <span id="files-count" class="section-count"></span>
+            </h2>
+            <button id="attach" class="button" type="button">Прикрепить</button>
+            <input id="attach-input" type="file" multiple hidden>
+          </div>
+          <p id="note-files-hint" class="files-hint" hidden></p>
+          <ul id="note-files" class="file-list" hidden></ul>
+          <ul id="attachment-list" class="upload-list"></ul>
+        </section>
 
-        <p id="password-hint" class="files-hint" hidden>
-          Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
-        </p>
-        <p id="note-files-hint" class="files-hint" hidden></p>
-        <ul id="note-files" class="file-list" hidden></ul>
-        <ul id="attachment-list" class="upload-list"></ul>
+        <section id="options" class="note-section options" aria-labelledby="options-title">
+          <h2 id="options-title" class="section-title">Параметры</h2>
+          <button
+            id="options-toggle"
+            class="options-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="options-body"
+          >
+            <span class="options-toggle-label">Параметры</span>
+            <span id="options-summary" class="options-summary">Навсегда</span>
+          </button>
 
-        <div class="toolbar">
-          <div class="options">
-            <label class="expiry">
-              <span>Хранить</span>
-              <select id="expiry">
-                <option value="0">навсегда</option>
-                <option value="600">10 минут</option>
-                <option value="3600">1 час</option>
-                <option value="86400">1 день</option>
-                <option value="604800">1 неделю</option>
-              </select>
-            </label>
+          <div id="options-body" class="options-body">
+            <div class="option-row">
+              <span id="expiry-label" class="option-label">Срок хранения</span>
+              <div id="expiry" class="segmented" role="radiogroup" aria-labelledby="expiry-label">
+                <label><input type="radio" name="expiry" value="0" checked><span>Навсегда</span></label>
+                <label><input type="radio" name="expiry" value="600"><span>10 минут</span></label>
+                <label><input type="radio" name="expiry" value="3600"><span>1 час</span></label>
+                <label><input type="radio" name="expiry" value="86400"><span>1 день</span></label>
+                <label><input type="radio" name="expiry" value="604800"><span>1 неделя</span></label>
+              </div>
+            </div>
 
-            <label class="burn">
-              <input id="burn" type="checkbox">
-              <span>Удалить после прочтения</span>
-            </label>
+            <div class="option-row">
+              <span class="option-label">Чтение</span>
+              <label class="burn">
+                <input id="burn" type="checkbox">
+                <span>Удалить после первого прочтения</span>
+              </label>
+            </div>
 
-            <div class="password-field">
-              <input
-                id="note-password"
-                class="password-input"
-                type="password"
-                placeholder="Пароль (необязательно)"
-                autocomplete="new-password"
-                maxlength="128"
-              >
-              <button id="toggle-password" class="button small" type="button">Показать</button>
+            <div class="option-row">
+              <label class="option-label" for="note-password">Пароль</label>
+              <div class="option-control">
+                <div class="password-field">
+                  <input
+                    id="note-password"
+                    class="password-input"
+                    type="password"
+                    placeholder="Необязательно"
+                    autocomplete="new-password"
+                    maxlength="128"
+                  >
+                  <button id="toggle-password" class="button" type="button">Показать</button>
+                </div>
+                <p id="password-hint" class="files-hint" hidden>
+                  Текст и файлы будут зашифрованы. Забытый пароль не восстановить.
+                </p>
+              </div>
             </div>
           </div>
+        </section>
 
+        <div class="actions">
+          <span class="shortcut"><kbd>Ctrl+S</kbd> сохраняет заметку</span>
           <div class="buttons">
-            <button id="attach" class="button" type="button">Прикрепить файлы</button>
-            <input id="attach-input" type="file" multiple hidden>
+            <button id="copy" class="button" type="button">Скопировать текст</button>
             <button id="save" class="button primary" type="button">Сохранить</button>
-            <button id="copy" class="button" type="button">Скопировать</button>
-            <button id="share" class="button" type="button" disabled>Поделиться</button>
           </div>
         </div>
       </div>
     </div>
 
     <section id="channel-view" class="channel" hidden>
-      <div class="channel-bar">
+      <div id="channel-bar" class="channel-bar">
         <span id="channel-role" class="role-badge"></span>
         <span id="channel-conn" class="conn"></span>
         <button id="become-sender" class="button" type="button" hidden>Стать отправителем</button>
       </div>
 
-      <div id="channel-invite" class="invite" hidden>
-        <img id="channel-qr" class="share-qr" alt="QR-код для второго устройства" width="232" height="232">
+      <section id="channel-invite" class="invite" aria-labelledby="invite-title" hidden>
+        <img id="channel-qr" class="share-qr" alt="QR-код для второго устройства" width="200" height="200">
         <div class="invite-body">
-          <h2 class="invite-title">Ждём второе устройство</h2>
-          <p class="invite-hint">Отсканируйте QR-код камерой телефона или откройте ссылку.</p>
-          <p class="invite-hint">
-            Или введите код на главной странице: <span id="channel-code" class="channel-code"></span>
-          </p>
-          <div class="share-link-row">
-            <input id="channel-url" class="share-url" type="text" readonly>
-            <button id="channel-url-copy" class="button" type="button">Скопировать</button>
-          </div>
+          <h2 id="invite-title" class="invite-title">Подключите второе устройство</h2>
+          <ol class="steps">
+            <li><div class="step">Отсканируйте QR-код камерой телефона.</div></li>
+            <li>
+              <div class="step">
+                Или введите код на главной странице:
+                <span id="channel-code" class="channel-code"></span>
+              </div>
+            </li>
+            <li>
+              <div class="step">
+                <label for="channel-url">Или отправьте ссылку:</label>
+                <div class="share-link-row">
+                  <input id="channel-url" class="share-url" type="text" readonly>
+                  <button id="channel-url-copy" class="button" type="button">Скопировать</button>
+                </div>
+              </div>
+            </li>
+          </ol>
         </div>
-      </div>
+      </section>
 
       <div id="channel-compose" class="compose" hidden>
+        <label class="section-title" for="channel-text">Сообщение</label>
         <textarea
           id="channel-text"
           class="editor compose-editor"
-          placeholder="Текст для второго устройства… (Ctrl+Enter — отправить). Файлы — перетащите сюда или Ctrl+V"
+          placeholder="Текст или файлы для второго устройства. Ctrl+Enter отправляет"
           maxlength="100000"
           spellcheck="false"
         ></textarea>
@@ -182,42 +256,134 @@
         <ul id="channel-uploads" class="upload-list"></ul>
       </div>
 
-      <p id="feed-empty" class="feed-empty">
-        Сообщений пока нет. Текст живёт минуту, файл — 5 минут или до скачивания.
-      </p>
-      <ul id="feed" class="feed"></ul>
+      <section id="feed-section" class="feed-section" aria-labelledby="feed-title" hidden>
+        <div class="feed-head">
+          <h2 id="feed-title" class="section-title">
+            Сообщения <span class="section-count">сначала новые</span>
+          </h2>
+          <span class="feed-note">Текст живёт 1 минуту, файл 5 минут или до скачивания</span>
+        </div>
+        <p id="feed-empty" class="feed-empty">Сообщений пока нет.</p>
+        <ul id="feed" class="feed"></ul>
+      </section>
 
-      <div id="channel-closed" class="burn-confirm" hidden>
-        <h2 id="closed-title" class="burn-confirm-title"></h2>
-        <p id="closed-text" class="burn-confirm-text"></p>
-        <button id="closed-action" class="button primary" type="button"></button>
+      <div id="channel-closed" class="gate" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+        <h2 id="closed-title" class="gate-title"></h2>
+        <p id="closed-text" class="gate-text"></p>
+        <button id="closed-action" class="button primary gate-action" type="button"></button>
       </div>
+    </section>
+
+    <section id="about-view" class="about" aria-labelledby="about-title" hidden>
+      <h1 id="about-title" class="about-title">О сервисе</h1>
+
+      <section id="how" class="about-section" aria-labelledby="how-title">
+        <h2 id="how-title" class="about-heading">Как это работает</h2>
+        <div class="about-columns">
+          <div class="about-column">
+            <h3 class="about-subheading">Заметка</h3>
+            <ol class="steps">
+              <li><div class="step">Вставьте текст или перетащите файлы.</div></li>
+              <li><div class="step">Выберите срок и, если нужно, пароль.</div></li>
+              <li><div class="step">Сохраните, и ссылка скопируется сама.</div></li>
+              <li><div class="step">Откройте её на другом устройстве или по QR-коду.</div></li>
+            </ol>
+          </div>
+          <div class="about-column">
+            <h3 class="about-subheading">Канал</h3>
+            <ol class="steps">
+              <li><div class="step">Откройте канал.</div></li>
+              <li><div class="step">На втором устройстве отсканируйте QR-код или введите код.</div></li>
+              <li><div class="step">Отправитель шлёт текст и файлы, получатель видит их сразу.</div></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="security" class="about-section" aria-labelledby="security-title">
+        <h2 id="security-title" class="about-heading">Безопасность</h2>
+        <ul class="about-list">
+          <li>
+            Заметка с паролем шифруется ключом из пароля (Argon2id + AES-256-GCM). Сам пароль
+            не хранится.
+          </li>
+          <li>
+            После 5 неверных паролей заметка блокируется на минуту, после 10 с одного адреса ввод
+            замораживается на 15 минут.
+          </li>
+          <li>
+            Ссылки на файлы подписаны и действуют ограниченное время. Одноразовые файлы удаляются
+            после скачивания.
+          </li>
+          <li>
+            Превью есть только у PNG, JPEG, GIF и WebP. Остальные файлы всегда скачиваются, а не
+            открываются в браузере.
+          </li>
+          <li>
+            Это не сквозное шифрование: в момент сохранения и открытия текст проходит через
+            сервер.
+          </li>
+        </ul>
+      </section>
+
+      <section id="faq" class="about-section" aria-labelledby="faq-title">
+        <h2 id="faq-title" class="about-heading">Частые вопросы</h2>
+        <dl class="faq">
+          <div class="faq-item">
+            <dt>Нужна ли регистрация?</dt>
+            <dd>Нет.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Сколько хранится заметка?</dt>
+            <dd>
+              Сколько выберете: от 10 минут до недели или бессрочно. Одноразовая удаляется после
+              первого прочтения.
+            </dd>
+          </div>
+          <div class="faq-item">
+            <dt>Какие файлы можно прикрепить?</dt>
+            <dd>Любые, до 10 штук по 50 МБ.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Что если забыть пароль?</dt>
+            <dd>Заметку не открыть: пароль не хранится, а без него текст не расшифровать.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Почему ввод пароля заморозился?</dt>
+            <dd>Слишком много неверных попыток. Через минуту (или 15) можно снова.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Сколько устройств можно подключить к каналу?</dt>
+            <dd>Два: отправитель и получатель. Роли можно поменять.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Почему канал закрылся?</dt>
+            <dd>В нём 5 минут ничего не отправляли. Откройте новый.</dd>
+          </div>
+          <div class="faq-item">
+            <dt>Видит ли сервер мои данные?</dt>
+            <dd>Заметку без пароля сервер хранит как есть, а заметку с паролем хранит зашифрованной.</dd>
+          </div>
+        </dl>
+      </section>
     </section>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
   </main>
 
-  <dialog id="share-dialog" class="share-dialog">
-    <form method="dialog" class="share-close-form">
-      <button class="share-close" type="submit" aria-label="Закрыть">×</button>
-    </form>
-
-    <h2 class="share-title">Поделиться заметкой</h2>
-
-    <div class="share-option">
-      <span class="share-label">Ссылка</span>
-      <div class="share-link-row">
-        <input id="share-url" class="share-url" type="text" readonly>
-        <button id="share-copy" class="button primary" type="button">Скопировать</button>
-      </div>
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-brand">CopyPaste · 2026</span>
+      <nav class="footer-links" aria-label="О сервисе">
+        <a href="/about#how">Как это работает</a>
+        <a href="/about#security">Безопасность</a>
+        <a href="/about#faq">FAQ</a>
+        <a href="https://github.com/zkuzmine-dot/CopyPaste">GitHub</a>
+        <a href="/docs">API</a>
+      </nav>
     </div>
-
-    <div class="share-option">
-      <span class="share-label">QR-код — отсканируйте камерой телефона</span>
-      <img id="share-qr" class="share-qr" alt="QR-код со ссылкой на заметку" width="232" height="232">
-      <a id="share-qr-download" class="share-download" download>Скачать QR-код</a>
-    </div>
-  </dialog>
+  </footer>
 
   <script src="/static/files.js"></script>
   <script src="/static/channel.js"></script>

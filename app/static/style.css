@@ -1,30 +1,139 @@
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-cyrillic-400-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-cyrillic-500-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-cyrillic-600-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-cyrillic-400-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-cyrillic-500-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --text: #1c1f24;
-  --muted: #6b7280;
-  --border: #d9dde3;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-text: #ffffff;
-  --success: #15803d;
-  --error: #b91c1c;
-  --radius: 10px;
+  --bg: #ffffff;
+  --panel: #f1f8ec;
+  --line: #dce9d3;
+  --line-strong: #a9c79a;
+  /* Поле узнают только по рамке, поэтому контраст с фоном не ниже 3:1 (WCAG 1.4.11).
+     Кнопкам хватает надписи, у них рамка светлее */
+  --field: #6f9460;
+  --text: #142312;
+  --muted: #4d6146;
+  --primary: #2f7a17;
+  --primary-hover: #256312;
+  --on-primary: #ffffff;
+  --link: #2f7a17;
+  --live: #4f9f2a;
+  --ok: #2f7a17;
+  --warn: #8a5300;
+  --error: #b42318;
+  --radius: 2px;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #121418;
-    --surface: #1b1e24;
-    --text: #e6e8eb;
-    --muted: #9aa1ab;
-    --border: #2e333b;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --accent-text: #0b0d10;
-    --success: #4ade80;
-    --error: #f87171;
+    --bg: #0c140b;
+    --panel: #122011;
+    --line: #1d331a;
+    --line-strong: #335a2c;
+    --field: #467a3b;
+    --text: #ecf6e8;
+    --muted: #a3bb9b;
+    --primary: #6fbf3a;
+    --primary-hover: #86cf55;
+    --on-primary: #0c1a07;
+    --link: #8fd65f;
+    --live: #6fcf4a;
+    --ok: #6fcf4a;
+    --warn: #e6b04d;
+    --error: #ff8a7a;
     color-scheme: dark;
   }
 }
@@ -38,594 +147,196 @@
   display: none !important;
 }
 
+/* Колонкой: на короткой странице подвал стоит у нижнего края экрана, а не посередине */
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
 }
 
-.page {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 24px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 100vh;
+::selection {
+  background: color-mix(in srgb, var(--live) 35%, transparent);
 }
 
-.header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+a {
+  color: var(--link);
+  text-underline-offset: 3px;
 }
 
-.logo {
-  font-size: 20px;
-  font-weight: 700;
+a:hover {
   color: var(--text);
-  text-decoration: none;
 }
 
-.new-link {
-  color: var(--accent);
-  text-decoration: none;
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
-.new-link:hover {
-  text-decoration: underline;
-}
-
-.editor-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.burn-confirm {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.burn-confirm-title {
-  margin: 0;
-  font-size: 18px;
-}
-
-.burn-confirm-text {
-  margin: 0;
+::placeholder {
   color: var(--muted);
+  opacity: 1;
 }
 
-.options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-}
-
-.burn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.burn input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-}
-
-.password-field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.password-input {
-  width: 210px;
-  min-width: 0;
-  padding: 8px 10px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font: inherit;
-}
-
-/* У поля в редакторе своя кнопка «Показать» — встроенный «глаз» Edge её дублирует */
-.password-field .password-input::-ms-reveal {
-  display: none;
-}
-
-.unlock-form {
-  display: flex;
-  gap: 8px;
-  width: min(420px, 100%);
-}
-
-.unlock-form .password-input {
-  flex: 1;
-  width: auto;
-}
-
-.unlock-error {
-  margin: 0;
-  color: var(--error);
-}
-
-.editor {
-  flex: 1;
-  min-height: 50vh;
-  width: 100%;
-  padding: 14px;
-  resize: vertical;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font: 14px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
-}
-
-.editor:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.counter {
-  font-variant-numeric: tabular-nums;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
-.toolbar {
+.page {
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  border-bottom: 1px solid var(--line);
+}
+
+.header-inner {
+  max-width: 960px;
+  height: 56px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: stretch;
   justify-content: space-between;
-  gap: 12px;
+  gap: 24px;
 }
 
-.expiry {
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+/* Знак: зелёный квадрат поверх тёмно-зелёного, между ними — просвет цвета фона */
+.logo::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  margin: 0 0 4px 4px;
+  background: var(--live);
+  box-shadow: 0 0 0 2px var(--bg), -4px 4px 0 0 var(--primary);
+}
+
+.logo:hover {
+  color: var(--text);
+}
+
+.nav {
+  display: flex;
+  gap: 28px;
+}
+
+/* Подчёркивание ложится на линию под шапкой: пункт на 1px выше её нижнего края */
+.nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  margin-bottom: -1px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
   color: var(--muted);
-}
-
-.expiry select {
-  padding: 8px 10px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   font: inherit;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.nav-item:hover:not(:disabled) {
+  color: var(--text);
 }
+
+.nav-item:disabled {
+  cursor: progress;
+}
+
+.nav-item[aria-current="page"] {
+  border-bottom-color: var(--primary);
+  color: var(--text);
+  cursor: default;
+}
+
+/* --- поля и кнопки --- */
 
 .button {
-  padding: 9px 16px;
-  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  background: transparent;
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   font: inherit;
+  font-weight: 500;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .button:hover:not(:disabled) {
-  border-color: var(--accent);
+  border-color: var(--text);
+  color: var(--text);
 }
 
 .button:disabled {
-  opacity: 0.5;
+  background: var(--line);
+  border-color: var(--line);
+  color: var(--muted);
   cursor: not-allowed;
 }
 
 .button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
+  padding: 0 20px;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
 }
 
 .button.primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--on-primary);
 }
 
-.status {
-  min-height: 1.5em;
-  margin: 0;
-}
-
-.status.success {
-  color: var(--success);
-}
-
-.status.error {
-  color: var(--error);
-}
-
-.share-dialog {
-  width: min(400px, calc(100vw - 32px));
-  padding: 24px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.share-dialog::backdrop {
-  background: rgb(0 0 0 / 0.45);
-}
-
-.share-close-form {
-  margin: 0;
-  position: absolute;
-  top: 8px;
-  right: 8px;
-}
-
-.share-close {
-  width: 32px;
-  height: 32px;
-  background: none;
-  border: none;
-  border-radius: var(--radius);
+.button.primary:disabled {
+  background: var(--line);
+  border-color: var(--line);
   color: var(--muted);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.share-close:hover {
-  color: var(--text);
-  background: var(--bg);
-}
-
-.share-title {
-  margin: 0 0 16px;
-  font-size: 18px;
-}
-
-.share-option {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.share-label {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.share-link-row {
-  display: flex;
-  gap: 8px;
-}
-
-.share-url {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 10px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font: 13px ui-monospace, "Cascadia Code", Consolas, monospace;
-}
-
-.share-qr {
-  align-self: center;
-  width: 232px;
-  height: 232px;
-  border-radius: var(--radius);
-}
-
-.share-download {
-  align-self: center;
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.share-download:hover {
-  text-decoration: underline;
-}
-
-.note-view {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.home-title {
-  margin: 24px 0 16px;
-  font-size: 22px;
-}
-
-.choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
-}
-
-.choice {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 24px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.choice:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-.choice:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.choice-title {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.choice-text {
-  color: var(--muted);
-}
-
-.channel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.channel-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  min-height: 40px;
-}
-
-.role-badge {
-  padding: 4px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.role-badge.sender {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.conn {
-  flex: 1;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.invite {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 24px;
-  padding: 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.invite-body {
-  flex: 1;
-  min-width: 240px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.invite-title {
-  margin: 0;
-  font-size: 18px;
-}
-
-.invite-hint {
-  margin: 0;
-  color: var(--muted);
-}
-
-.compose {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.compose-editor {
-  min-height: 20vh;
-}
-
-.compose-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.feed-empty {
-  margin: 0;
-  color: var(--muted);
-}
-
-.feed {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.feed-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.feed-text {
-  margin: 0;
-  max-height: 40vh;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: 14px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
-}
-
-.feed-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.feed-left {
-  font-variant-numeric: tabular-nums;
-}
-
-.join-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 24px;
-}
-
-.join-label {
-  color: var(--muted);
-}
-
-.channel-code {
-  color: var(--text);
-  font: 600 16px ui-monospace, "Cascadia Code", Consolas, monospace;
-  letter-spacing: 0.08em;
-}
-
-.dropping {
-  outline: 2px dashed var(--accent);
-  outline-offset: 4px;
-  border-radius: var(--radius);
-}
-
-.files-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.upload-list,
-.file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.upload-list:empty {
-  display: none;
-}
-
-.upload-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 14px;
-}
-
-.upload-item .file-name {
-  flex: 1 1 auto;
-}
-
-.upload-item .progress,
-.file-card .progress {
-  flex-basis: 100%;
-  grid-column: 1 / -1;
-}
-
-.file-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.file-size,
-.file-status {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-a.button {
-  display: inline-block;
-  text-decoration: none;
 }
 
 .button.small {
-  padding: 4px 10px;
+  min-height: 32px;
+  padding: 0 12px;
   font-size: 13px;
 }
 
 .icon-button {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
+  flex: none;
   background: none;
   border: none;
   border-radius: var(--radius);
@@ -637,54 +348,1177 @@ a.button {
 
 .icon-button:hover {
   color: var(--text);
+  background: var(--panel);
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.password-input,
+.share-url {
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
   background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--field);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+.share-url {
+  flex: 1;
+  font: 13px var(--mono);
+}
+
+.password-input {
+  width: 220px;
+}
+
+.password-input:focus,
+.share-url:focus,
+.editor:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+/* У поля в редакторе своя кнопка «Показать» — встроенный «глаз» Edge её дублирует */
+.password-field .password-input::-ms-reveal {
+  display: none;
+}
+
+/* На телефоне кнопка уходит под поле, а не сжимает ссылку до нечитаемого обрывка */
+.share-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.share-link-row .share-url {
+  flex: 1 1 180px;
+}
+
+.status {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Пустая строка не занимает места, но остаётся в дереве доступности: так читалка
+   озвучит сообщение, когда оно появится. При display: none могла бы промолчать */
+.status:empty {
+  position: absolute;
+}
+
+.status.success {
+  color: var(--ok);
+}
+
+.status.error {
+  color: var(--error);
+}
+
+/* На телефоне строка в конце длинной страницы уходит за экран — сообщение закреплено внизу.
+   В редакторе оно над прилипшей панелью действий: 12 + 48 + 12 px панели и зазор */
+@media (max-width: 520px) {
+  .status:not(:empty) {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    z-index: 2;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+  }
+
+  .page:has(#note-view:not([hidden]) #editor-area:not([hidden])) .status:not(:empty) {
+    bottom: 84px;
+  }
 }
 
 .progress {
-  height: 4px;
+  height: 2px;
   overflow: hidden;
-  background: var(--border);
-  border-radius: 2px;
+  background: var(--line);
 }
 
 .progress-bar {
   width: 0;
   height: 100%;
-  background: var(--accent);
+  background: var(--live);
   transition: width 0.2s;
 }
 
+@media (pointer: coarse) {
+  .button,
+  .password-input,
+  .share-url,
+  .segmented span {
+    min-height: 44px;
+  }
+
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* --- главная --- */
+
+.home {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 48px;
+  padding-top: 32px;
+}
+
+.home-section {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 2px solid var(--primary);
+}
+
+/* Канал — «живой» светло-зелёный, как точка «в сети» */
+.home-section.live {
+  border-top-color: var(--live);
+}
+
+.home-section-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.home-section-text {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.join-form {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.join-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.join-form .share-url {
+  font-size: 14px;
+}
+
+/* Код набирается моноширинным, а подсказка им не влезает в поле на телефоне */
+.join-form .share-url::placeholder {
+  font-family: var(--font);
+}
+
+.join-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* --- заметка --- */
+
+.note-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.editor-title {
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.editor-slug {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.info {
+  margin: -10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.info:empty {
+  display: none;
+}
+
+.editor {
+  flex: 1;
+  min-height: 40vh;
+  width: 100%;
+  padding: 14px 16px;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--field);
+  border-radius: var(--radius);
+  font: 14px/1.6 var(--mono);
+}
+
+.counter {
+  color: var(--muted);
+  font: 12px var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.share-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 24px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.share-panel .share-qr {
+  width: 132px;
+  height: 132px;
+}
+
+.share-body {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-status {
+  margin: 0;
+  color: var(--ok);
+  font-size: 13px;
+}
+
+.share-status.error {
+  color: var(--error);
+}
+
+.share-status:empty {
+  display: none;
+}
+
+.share-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.note-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.section-count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.options {
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.options-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Сворачивалка нужна только на телефоне, на компьютере параметры всегда раскрыты */
+.options-toggle {
+  display: none;
+}
+
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 24px;
+}
+
+/* Высота строки — как у полей рядом: подпись встаёт по центру первой строки */
+.option-label {
+  flex: 0 0 140px;
+  color: var(--muted);
+  line-height: 40px;
+}
+
+.option-control {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Варианты — радиокнопки: выбор одного, стрелки на клавиатуре работают сами */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--line-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.segmented label {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+}
+
+.segmented input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.segmented span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  background: var(--bg);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segmented span:hover {
+  background: var(--panel);
+}
+
+.segmented input:checked + span {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--text);
+  outline-offset: -4px;
+}
+
+.burn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.burn input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.password-field {
+  display: flex;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.password-field .password-input {
+  flex: 1;
+  width: auto;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.actions .buttons {
+  margin-left: auto;
+}
+
+.shortcut {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+kbd {
+  font: 12px var(--mono);
+}
+
+@media (pointer: coarse) {
+  .shortcut {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .option-label {
+    flex-basis: 100%;
+    line-height: 1.5;
+  }
+
+  .options {
+    padding-top: 0;
+  }
+
+  .options #options-title {
+    display: none;
+  }
+
+  .options-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .options-toggle-label {
+    font-weight: 500;
+  }
+
+  .options-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: right;
+  }
+
+  /* Стрелка вниз, у раскрытых параметров — вверх */
+  .options-summary::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: none;
+    margin-top: -4px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  .options.expanded .options-summary::after {
+    margin-top: 4px;
+    transform: rotate(-135deg);
+  }
+
+  .options-body {
+    display: none;
+    padding-bottom: 8px;
+  }
+
+  .options.expanded .options-body {
+    display: flex;
+  }
+
+  /* Редактор занимает весь экран, и панель стоит у его края: подвал уходит ниже прокрутки,
+     а без нижнего отступа поле текста дотягивается до панели */
+  .page:has(#note-view:not([hidden]) #editor-area:not([hidden])) {
+    min-height: calc(100vh - 57px);
+    padding-bottom: 0;
+  }
+
+  /* Главные кнопки всегда под пальцем: панель прилипает к низу экрана во всю ширину */
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: 0 -24px;
+    padding: 12px 24px;
+    background: var(--bg);
+  }
+
+  .actions .buttons {
+    flex: 1;
+    flex-wrap: nowrap;
+    margin-left: 0;
+  }
+
+  .actions .button {
+    min-height: 48px;
+  }
+
+  .actions .button.primary {
+    flex: 1;
+  }
+
+  .shortcut {
+    display: none;
+  }
+}
+
+/* Экраны-заглушки: пароль, одноразовая, «не найдена», закрытый канал */
+.gate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 400px;
+  padding: 32px 0 8px;
+}
+
+.gate-title {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.gate-text {
+  margin: 0;
+  color: var(--muted);
+}
+
+.gate-form {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.gate-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gate-form .password-input {
+  width: 100%;
+  height: 44px;
+}
+
+.gate-action {
+  align-self: stretch;
+  min-height: 44px;
+  margin-top: 8px;
+}
+
+.password-input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+/* После ошибки поле в фокусе: зелёная обводка фокуса скрыла бы красную рамку */
+.password-input[aria-invalid="true"]:focus {
+  outline-color: var(--error);
+}
+
+.password-input:disabled {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.unlock-error {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
+}
+
+.unlock-error.warn {
+  color: var(--warn);
+}
+
+.files-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* --- файлы --- */
+
+.upload-list,
+.file-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.upload-list:empty {
+  display: none;
+}
+
+.file-list > li,
+.upload-item {
+  border-bottom: 1px solid var(--line);
+}
+
+/* Список закрывает линия следующего блока, своя дала бы двойную */
+.file-list > li:last-child,
+.upload-item:last-child {
+  border-bottom: 0;
+}
+
+.upload-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 0;
+}
+
+.upload-item .file-name {
+  flex: 0 1 auto;
+}
+
+.upload-item .file-status {
+  flex: 1 1 auto;
+}
+
+.upload-item .progress,
+.file-card .progress {
+  flex-basis: 100%;
+}
+
+.file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.file-size {
+  color: var(--muted);
+  font: 12px var(--mono);
+  white-space: nowrap;
+}
+
+.file-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .file-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
 }
 
 .file-list .file-card {
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 10px 0;
 }
 
 .file-preview {
-  grid-column: 1 / -1;
-  justify-self: start;
-  max-width: 100%;
-  max-height: 240px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  width: 48px;
+  height: 48px;
+  flex: none;
+  object-fit: cover;
+  background: var(--panel);
+  border: 1px solid var(--line);
 }
 
 .file-info {
+  flex: 1 1 200px;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
+  gap: 2px 10px;
   min-width: 0;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .file-actions:empty {
   display: none;
+}
+
+.file-card.interrupted .file-status {
+  color: var(--warn);
+}
+
+.file-card.interrupted .progress-bar {
+  background: var(--warn);
+}
+
+.file-card.received .file-name {
+  color: var(--muted);
+}
+
+.file-card.received .file-status {
+  color: var(--ok);
+}
+
+.dropping {
+  outline: 2px dashed var(--primary);
+  outline-offset: 4px;
+}
+
+/* --- QR-код и ссылка: заметка и приглашение в канал --- */
+
+.share-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.share-qr {
+  align-self: flex-start;
+  width: 200px;
+  height: 200px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+}
+
+/* --- канал --- */
+
+.channel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.channel-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  min-height: 40px;
+}
+
+.role-badge {
+  font-weight: 600;
+}
+
+.role-badge:empty {
+  display: none;
+}
+
+/* Ширина по тексту: на узком экране статус целиком уходит на новую строку, а не рвётся */
+.conn {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.conn:empty {
+  display: none;
+}
+
+/* Точка состояния: полая — ждём или нет в сети, зелёная — в сети, янтарная — нет связи */
+.conn::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.conn[data-state="online"]::before {
+  background: var(--live);
+  border-color: var(--live);
+}
+
+.conn[data-state="problem"] {
+  color: var(--warn);
+}
+
+.conn[data-state="problem"]::before {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 32px;
+  padding: 28px;
+  border: 1px solid var(--line);
+}
+
+.invite-body {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.invite-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps > li {
+  display: flex;
+  gap: 14px;
+  counter-increment: step;
+}
+
+.steps > li::before {
+  content: counter(step);
+  flex: none;
+  width: 16px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.step {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.channel-code {
+  display: flex;
+  gap: 0.6em;
+  color: var(--text);
+  font: 500 28px/1.2 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compose-editor {
+  flex: none;
+  min-height: 120px;
+  height: 20vh;
+}
+
+.compose-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.feed-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.feed-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.feed-empty {
+  margin: 0;
+  padding: 16px 0;
+  color: var(--muted);
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.feed:empty {
+  display: none;
+}
+
+/* Время | содержимое | действие. У файла кнопки внутри карточки: тело до правого края */
+.feed-item {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.feed-item.file .feed-body {
+  grid-column: 2 / -1;
+}
+
+.feed-time {
+  padding-top: 2px;
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+
+.feed-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feed-item .file-preview {
+  width: 64px;
+  height: 64px;
+}
+
+.feed-text {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 14px/1.6 var(--mono);
+}
+
+.feed-left {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+  .feed-item {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 4px 12px;
+  }
+
+  .channel-code {
+    font-size: 24px;
+  }
+
+  .compose-actions {
+    flex-wrap: wrap;
+  }
+
+  .compose-actions .buttons {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+  }
+
+  .compose-actions .button {
+    min-height: 48px;
+  }
+
+  .compose-actions .button.primary {
+    flex: 1;
+  }
+
+  .invite {
+    padding: 16px;
+    gap: 20px;
+  }
+}
+
+/* --- о сервисе --- */
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  padding-top: 16px;
+}
+
+.about-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 2px solid var(--primary);
+  scroll-margin-top: 16px;
+}
+
+.about-heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.about-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+}
+
+.about-column {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-subheading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.about-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 680px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.about-list li::marker {
+  color: var(--primary);
+}
+
+.faq {
+  display: flex;
+  flex-direction: column;
+  max-width: 680px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.faq-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.faq dt {
+  font-weight: 500;
+}
+
+.faq dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+/* --- подвал --- */
+
+.footer {
+  border-top: 1px solid var(--line);
+}
+
+.footer-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 24px 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  color: var(--text);
+  text-decoration: underline;
 }

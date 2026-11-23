@@ -13,6 +13,8 @@ const CLOSE_CHANNEL_CLOSED = 4410;
 const SLUG_PATTERN = /^[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
 
 const chooseChannelBtn = document.getElementById("choose-channel");
+const navChannelBtn = document.getElementById("nav-channel");
+const channelBarEl = document.getElementById("channel-bar");
 const channelRoleEl = document.getElementById("channel-role");
 const channelConnEl = document.getElementById("channel-conn");
 const becomeSenderBtn = document.getElementById("become-sender");
@@ -30,6 +32,7 @@ const channelSendBtn = document.getElementById("channel-send");
 const channelAttachBtn = document.getElementById("channel-attach");
 const channelAttachInput = document.getElementById("channel-attach-input");
 const channelUploadsEl = document.getElementById("channel-uploads");
+const feedSectionEl = document.getElementById("feed-section");
 const feedEl = document.getElementById("feed");
 const feedEmptyEl = document.getElementById("feed-empty");
 const channelClosedEl = document.getElementById("channel-closed");
@@ -90,8 +93,13 @@ function forgetToken(slug) {
   }
 }
 
+function setStarting(starting) {
+  chooseChannelBtn.disabled = starting;
+  navChannelBtn.disabled = starting;
+}
+
 async function startChannel() {
-  chooseChannelBtn.disabled = true;
+  setStarting(true);
   try {
     const response = await fetch(CHANNEL_API, { method: "POST" });
     if (!response.ok) {
@@ -103,9 +111,9 @@ async function startChannel() {
     history.pushState(null, "", `/c/${encodeURIComponent(created.slug)}`);
     route();
   } catch {
-    showStatus("Не удалось связаться с сервером", "error");
+    showStatus("Нет связи с сервером", "error");
   } finally {
-    chooseChannelBtn.disabled = false;
+    setStarting(false);
   }
 }
 
@@ -132,7 +140,7 @@ async function joinChannel(slug) {
       method: "POST",
     });
     if (response.status === 404) {
-      showClosed("Канал не найден", "Он закрылся из-за бездействия или ссылка неверная.");
+      showClosed("Канал не найден", "Он закрылся из-за бездействия или в ссылке ошибка.");
       return null;
     }
     if (response.status === 409) {
@@ -262,7 +270,7 @@ function errorText(event) {
     case "not_receiver":
       return "Вы уже отправитель";
     case "rate_limited":
-      return "Слишком часто — подождите секунду";
+      return "Слишком часто. Подождите секунду";
     case "file_not_found":
       return "Файл не отправлен: его уже отправили или загрузка устарела";
     case "invalid_event":
@@ -281,16 +289,16 @@ function handleClose(code) {
       return;
     case CLOSE_NOT_FOUND:
       forgetToken(slug);
-      showClosed("Канал не найден", "Он закрылся из-за бездействия или ссылка неверная.");
+      showClosed("Канал не найден", "Он закрылся из-за бездействия или в ссылке ошибка.");
       return;
     case CLOSE_UNAUTHORIZED:
       forgetToken(slug);
-      showClosed("Нет доступа к каналу", "Сохранённый ключ участника не подошёл.");
+      showClosed("Нет доступа к каналу", "Ключ участника на этом устройстве не подошёл.");
       return;
     case CLOSE_REPLACED:
       showClosed(
         "Канал открыт в другой вкладке",
-        "Одно устройство — одно подключение. Здесь канал отключён.",
+        "Здесь он отключён: одно устройство подключается только из одной вкладки.",
         "Открыть здесь",
         () => {
           channelClosedEl.hidden = true;
@@ -300,7 +308,7 @@ function handleClose(code) {
       return;
   }
   if (code === CLOSE_MESSAGE_TOO_BIG) {
-    showStatus("Сообщение слишком большое — сервер его не принял", "error");
+    showStatus("Сообщение слишком большое, сервер его не принял", "error");
   }
   // Обрыв связи (сон телефона, смена сети): переподключаемся с растущей паузой
   const delay = Math.min(1000 * 2 ** channel.retries, RECONNECT_MAX_DELAY);
@@ -309,7 +317,7 @@ function handleClose(code) {
   channel.retryTimer = setTimeout(connect, delay);
 }
 
-function showClosed(title, text, actionLabel = "Начать новый обмен", action = startChannel) {
+function showClosed(title, text, actionLabel = "Открыть новый канал", action = startChannel) {
   clearInterval(channel.tickTimer);
   channel.tickTimer = null;
   channel.role = null;
@@ -327,11 +335,31 @@ function setConnection(text) {
   render();
 }
 
-function connectionText(active) {
-  if (channel.connection || !active || !channel.peerJoined) {
-    return channel.connection;
+// От состояния зависит точка перед текстом: зелёная — в сети, янтарная — нет связи
+function connectionState(active) {
+  if (channel.connection) {
+    return channel.retries > 0 ? "problem" : "connecting";
   }
-  return channel.peerOnline ? "Второе устройство в сети" : "Второе устройство не в сети";
+  if (!active) {
+    return "";
+  }
+  if (!channel.peerJoined) {
+    return "waiting";
+  }
+  return channel.peerOnline ? "online" : "offline";
+}
+
+function connectionText(state) {
+  switch (state) {
+    case "waiting":
+      return "Ждём второе устройство";
+    case "online":
+      return "Второе устройство в сети";
+    case "offline":
+      return "Второе устройство не в сети";
+    default:
+      return channel.connection;
+  }
 }
 
 function render() {
@@ -354,12 +382,21 @@ function render() {
     channelUrlEl.dataset.slug = channel.slug;
     channelUrlEl.value = `${location.origin}/c/${encodeURIComponent(channel.slug)}`;
     channelQrEl.src = `${CHANNEL_API}/${encodeURIComponent(channel.slug)}/qr`;
-    channelCodeEl.textContent = channel.slug;
+    // Две группы по четыре — так код легче продиктовать. Пробел рисует CSS, а не текст:
+    // скопированный код остаётся слитным
+    channelCodeEl.replaceChildren(
+      el("span", null, channel.slug.slice(0, 4)),
+      el("span", null, channel.slug.slice(4)),
+    );
   }
-  channelConnEl.textContent = connectionText(active);
+  const state = connectionState(active);
+  channelConnEl.dataset.state = state;
+  channelConnEl.textContent = connectionText(state);
+  // Над экраном «канал закрыт» пустая строка статуса дала бы лишний отступ
+  channelBarEl.hidden = !active && !state;
 
-  feedEl.hidden = !channelClosedEl.hidden;
-  feedEmptyEl.hidden = !active || channel.messages.size > 0;
+  feedSectionEl.hidden = !active;
+  feedEmptyEl.hidden = channel.messages.size > 0;
 }
 
 // Ссылок нет только у своего файла: скачивает его собеседник
@@ -371,32 +408,31 @@ function addMessage(message) {
   if (channel.messages.has(message.id)) {
     return;
   }
-  const item = document.createElement("li");
-  item.className = "feed-item";
-
-  const meta = document.createElement("div");
-  meta.className = "feed-meta";
-  const left = document.createElement("span");
-  left.className = "feed-left";
-  meta.append(left);
+  // Строка ленты: время | содержимое и срок | действие (у файла кнопки внутри карточки)
+  const item = el("li", "feed-item");
+  const time = el(
+    "time",
+    "feed-time",
+    new Date(message.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+  );
+  time.dateTime = message.created_at;
+  const body = el("div", "feed-body");
+  const left = el("span", "feed-left");
+  item.append(time, body);
 
   let card = null;
   if (message.kind === "file" && message.file) {
+    item.classList.add("file");
     card = createFileCard(message.file, {
-      status: isOwnFile(message) ? "Ждёт скачивания получателем" : "",
+      status: isOwnFile(message) ? "Ждёт скачивания" : "",
     });
-    item.append(card.el, meta);
+    body.append(card.el, left);
   } else {
-    const text = document.createElement("pre");
-    text.className = "feed-text";
-    text.textContent = message.text;
-    const copy = document.createElement("button");
-    copy.className = "button";
+    const copy = el("button", "button", "Скопировать");
     copy.type = "button";
-    copy.textContent = "Скопировать";
     copy.addEventListener("click", () => copyMessage(message.text));
-    meta.append(copy);
-    item.append(text, meta);
+    body.append(el("pre", "feed-text", message.text), left);
+    item.append(copy);
   }
   // Новые сверху: обычно нужно именно последнее присланное
   const older = [...channel.messages.values()]
@@ -414,8 +450,7 @@ function updateLeft(entry) {
     channel.messages.delete(entry.data.id);
     return;
   }
-  const minutes = Math.floor(seconds / 60);
-  const rest = minutes ? `${minutes} мин ${seconds % 60} с` : `${seconds} с`;
+  const rest = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   entry.left.textContent = `исчезнет через ${rest}`;
 }
 
@@ -436,7 +471,7 @@ async function copyMessage(text) {
 function sendMessage() {
   const text = channelTextEl.value;
   if (!text.trim()) {
-    showStatus("Нечего отправлять — поле пустое", "error");
+    showStatus("Нечего отправлять: поле пустое", "error");
     return;
   }
   if (!channel.ws || channel.ws.readyState !== WebSocket.OPEN) {
@@ -526,7 +561,7 @@ function joinByCode(event) {
   event.preventDefault();
   const code = parseChannelCode(joinCodeEl.value);
   if (!code) {
-    showStatus("Код — 8 символов: латинские буквы и цифры", "error");
+    showStatus("Код: 8 латинских букв и цифр", "error");
     joinCodeEl.focus();
     return;
   }
@@ -554,6 +589,12 @@ window.addEventListener("pageshow", (event) => {
 });
 
 chooseChannelBtn.addEventListener("click", startChannel);
+// В открытом канале пункт «Канал» — текущий раздел, а не команда открыть ещё один
+navChannelBtn.addEventListener("click", () => {
+  if (!navChannelBtn.hasAttribute("aria-current")) {
+    startChannel();
+  }
+});
 joinFormEl.addEventListener("submit", joinByCode);
 becomeSenderBtn.addEventListener("click", becomeSender);
 channelSendBtn.addEventListener("click", sendMessage);
