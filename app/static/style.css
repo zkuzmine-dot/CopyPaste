@@ -381,15 +381,26 @@ a:hover {
   display: none;
 }
 
+/* На телефоне кнопка уходит под поле, а не сжимает ссылку до нечитаемого обрывка */
 .share-link-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
+.share-link-row .share-url {
+  flex: 1 1 180px;
+}
+
 .status {
-  min-height: 1.5em;
   margin: 0;
   font-size: 13px;
+}
+
+/* Пустая строка не занимает места, но остаётся в дереве доступности: так читалка
+   озвучит сообщение, когда оно появится. При display: none могла бы промолчать */
+.status:empty {
+  position: absolute;
 }
 
 .status.success {
@@ -633,6 +644,17 @@ a:hover {
   border-top: 1px solid var(--line);
 }
 
+.options-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Сворачивалка нужна только на телефоне, на компьютере параметры всегда раскрыты */
+.options-toggle {
+  display: none;
+}
+
 .option-row {
   display: flex;
   flex-wrap: wrap;
@@ -764,6 +786,102 @@ kbd {
   .option-label {
     flex-basis: 100%;
     line-height: 1.5;
+  }
+
+  .options {
+    padding-top: 0;
+  }
+
+  .options #options-title {
+    display: none;
+  }
+
+  .options-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .options-toggle-label {
+    font-weight: 500;
+  }
+
+  .options-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: right;
+  }
+
+  /* Стрелка вниз, у раскрытых параметров — вверх */
+  .options-summary::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: none;
+    margin-top: -4px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  .options.expanded .options-summary::after {
+    margin-top: 4px;
+    transform: rotate(-135deg);
+  }
+
+  .options-body {
+    display: none;
+    padding-bottom: 8px;
+  }
+
+  .options.expanded .options-body {
+    display: flex;
+  }
+
+  /* Без нижнего отступа поле текста дотягивается до низа, и панель стоит у края экрана */
+  .page:has(#note-view:not([hidden]) #editor-area:not([hidden])) {
+    padding-bottom: 0;
+  }
+
+  /* Главные кнопки всегда под пальцем: панель прилипает к низу экрана во всю ширину */
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: 0 -24px;
+    padding: 12px 24px;
+    background: var(--bg);
+  }
+
+  .actions .buttons {
+    flex: 1;
+    flex-wrap: nowrap;
+    margin-left: 0;
+  }
+
+  .actions .button {
+    min-height: 48px;
+  }
+
+  .actions .button.primary {
+    flex: 1;
+  }
+
+  .shortcut {
+    display: none;
   }
 }
 
@@ -1011,8 +1129,9 @@ kbd {
   display: none;
 }
 
+/* Ширина по тексту: на узком экране статус целиком уходит на новую строку, а не рвётся */
 .conn {
-  flex: 1;
+  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1101,15 +1220,6 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-/* На телефоне кнопка уходит под ссылку, а не сжимает её до нечитаемого обрывка */
-.step .share-link-row {
-  flex-wrap: wrap;
-}
-
-.step .share-url {
-  flex: 1 1 180px;
 }
 
 .channel-code {
@@ -1234,6 +1344,23 @@ kbd {
 
   .channel-code {
     font-size: 24px;
+  }
+
+  .compose-actions {
+    flex-wrap: wrap;
+  }
+
+  .compose-actions .buttons {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+  }
+
+  .compose-actions .button {
+    min-height: 48px;
+  }
+
+  .compose-actions .button.primary {
+    flex: 1;
   }
 
   .invite {

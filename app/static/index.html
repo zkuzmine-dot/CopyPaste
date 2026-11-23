@@ -139,45 +139,57 @@
           <ul id="attachment-list" class="upload-list"></ul>
         </section>
 
-        <section class="note-section options" aria-labelledby="options-title">
+        <section id="options" class="note-section options" aria-labelledby="options-title">
           <h2 id="options-title" class="section-title">Параметры</h2>
+          <button
+            id="options-toggle"
+            class="options-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="options-body"
+          >
+            <span class="options-toggle-label">Параметры</span>
+            <span id="options-summary" class="options-summary">Навсегда</span>
+          </button>
 
-          <div class="option-row">
-            <span id="expiry-label" class="option-label">Срок хранения</span>
-            <div id="expiry" class="segmented" role="radiogroup" aria-labelledby="expiry-label">
-              <label><input type="radio" name="expiry" value="0" checked><span>Навсегда</span></label>
-              <label><input type="radio" name="expiry" value="600"><span>10 минут</span></label>
-              <label><input type="radio" name="expiry" value="3600"><span>1 час</span></label>
-              <label><input type="radio" name="expiry" value="86400"><span>1 день</span></label>
-              <label><input type="radio" name="expiry" value="604800"><span>1 неделя</span></label>
-            </div>
-          </div>
-
-          <div class="option-row">
-            <span class="option-label">Чтение</span>
-            <label class="burn">
-              <input id="burn" type="checkbox">
-              <span>Удалить после первого прочтения</span>
-            </label>
-          </div>
-
-          <div class="option-row">
-            <label class="option-label" for="note-password">Пароль</label>
-            <div class="option-control">
-              <div class="password-field">
-                <input
-                  id="note-password"
-                  class="password-input"
-                  type="password"
-                  placeholder="Необязательно"
-                  autocomplete="new-password"
-                  maxlength="128"
-                >
-                <button id="toggle-password" class="button" type="button">Показать</button>
+          <div id="options-body" class="options-body">
+            <div class="option-row">
+              <span id="expiry-label" class="option-label">Срок хранения</span>
+              <div id="expiry" class="segmented" role="radiogroup" aria-labelledby="expiry-label">
+                <label><input type="radio" name="expiry" value="0" checked><span>Навсегда</span></label>
+                <label><input type="radio" name="expiry" value="600"><span>10 минут</span></label>
+                <label><input type="radio" name="expiry" value="3600"><span>1 час</span></label>
+                <label><input type="radio" name="expiry" value="86400"><span>1 день</span></label>
+                <label><input type="radio" name="expiry" value="604800"><span>1 неделя</span></label>
               </div>
-              <p id="password-hint" class="files-hint" hidden>
-                Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
-              </p>
+            </div>
+
+            <div class="option-row">
+              <span class="option-label">Чтение</span>
+              <label class="burn">
+                <input id="burn" type="checkbox">
+                <span>Удалить после первого прочтения</span>
+              </label>
+            </div>
+
+            <div class="option-row">
+              <label class="option-label" for="note-password">Пароль</label>
+              <div class="option-control">
+                <div class="password-field">
+                  <input
+                    id="note-password"
+                    class="password-input"
+                    type="password"
+                    placeholder="Необязательно"
+                    autocomplete="new-password"
+                    maxlength="128"
+                  >
+                  <button id="toggle-password" class="button" type="button">Показать</button>
+                </div>
+                <p id="password-hint" class="files-hint" hidden>
+                  Забудете пароль — заметку не восстановить: текст хранится только в зашифрованном виде.
+                </p>
+              </div>
             </div>
           </div>
         </section>

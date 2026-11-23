@@ -38,6 +38,9 @@ const burnFilesEl = document.getElementById("burn-files");
 const passwordEl = document.getElementById("note-password");
 const passwordToggleBtn = document.getElementById("toggle-password");
 const passwordHintEl = document.getElementById("password-hint");
+const optionsEl = document.getElementById("options");
+const optionsToggleBtn = document.getElementById("options-toggle");
+const optionsSummaryEl = document.getElementById("options-summary");
 const unlockEl = document.getElementById("unlock");
 const notFoundEl = document.getElementById("not-found");
 const unlockInfoEl = document.getElementById("unlock-info");
@@ -152,6 +155,24 @@ function resetPasswordField() {
   passwordEl.type = "password";
   passwordToggleBtn.textContent = "Показать";
   passwordHintEl.hidden = true;
+  updateOptionsSummary();
+}
+
+// На телефоне параметры свёрнуты в строку: по ней видно, что выбрано, не раскрывая
+function updateOptionsSummary() {
+  const parts = [expiryEl.querySelector("input:checked").nextElementSibling.textContent];
+  if (burnEl.checked) {
+    parts.push("одноразовая");
+  }
+  if (passwordEl.value) {
+    parts.push("с паролем");
+  }
+  optionsSummaryEl.textContent = parts.join(" · ");
+}
+
+function setOptionsExpanded(expanded) {
+  optionsEl.classList.toggle("expanded", expanded);
+  optionsToggleBtn.setAttribute("aria-expanded", String(expanded));
 }
 
 function togglePasswordVisibility() {
@@ -522,6 +543,8 @@ async function saveNote() {
     const length = passwordLength(password);
     if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
       showStatus(`Пароль — от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
+      // В свёрнутых параметрах поле не видно — фокус ушёл бы в никуда
+      setOptionsExpanded(true);
       passwordEl.focus();
       return;
     }
@@ -661,6 +684,12 @@ unlockFormEl.addEventListener("submit", unlockNote);
 passwordToggleBtn.addEventListener("click", togglePasswordVisibility);
 passwordEl.addEventListener("input", () => {
   passwordHintEl.hidden = !passwordEl.value;
+  updateOptionsSummary();
+});
+expiryEl.addEventListener("change", updateOptionsSummary);
+burnEl.addEventListener("change", updateOptionsSummary);
+optionsToggleBtn.addEventListener("click", () => {
+  setOptionsExpanded(!optionsEl.classList.contains("expanded"));
 });
 passwordEl.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -698,4 +727,6 @@ document.addEventListener("keydown", (event) => {
 // Кнопки «назад/вперёд» в браузере меняют адрес без перезагрузки страницы
 window.addEventListener("popstate", route);
 
+// При перезагрузке браузер может вернуть отметки в полях — итог должен им соответствовать
+updateOptionsSummary();
 route();
