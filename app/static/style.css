@@ -98,6 +98,9 @@
   --panel: #f1f8ec;
   --line: #dce9d3;
   --line-strong: #a9c79a;
+  /* Поле узнают только по рамке, поэтому контраст с фоном не ниже 3:1 (WCAG 1.4.11).
+     Кнопкам хватает надписи, у них рамка светлее */
+  --field: #6f9460;
   --text: #142312;
   --muted: #4d6146;
   --primary: #2f7a17;
@@ -120,6 +123,7 @@
     --panel: #122011;
     --line: #1d331a;
     --line-strong: #335a2c;
+    --field: #467a3b;
     --text: #ecf6e8;
     --muted: #a3bb9b;
     --primary: #6fbf3a;
@@ -355,7 +359,7 @@ a:hover {
   padding: 0 12px;
   background: var(--bg);
   color: var(--text);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--field);
   border-radius: var(--radius);
   font: inherit;
 }
@@ -409,6 +413,26 @@ a:hover {
 
 .status.error {
   color: var(--error);
+}
+
+/* На телефоне строка в конце длинной страницы уходит за экран — сообщение закреплено внизу.
+   В редакторе оно над прилипшей панелью действий: 12 + 48 + 12 px панели и зазор */
+@media (max-width: 520px) {
+  .status:not(:empty) {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    z-index: 2;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+  }
+
+  .page:has(#note-view:not([hidden]) #editor-area:not([hidden])) .status:not(:empty) {
+    bottom: 84px;
+  }
 }
 
 .progress {
@@ -557,7 +581,7 @@ a:hover {
   resize: vertical;
   background: var(--bg);
   color: var(--text);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--field);
   border-radius: var(--radius);
   font: 14px/1.6 var(--mono);
 }
