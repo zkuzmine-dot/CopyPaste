@@ -193,28 +193,39 @@
     </div>
 
     <section id="channel-view" class="channel" hidden>
-      <div class="channel-bar">
+      <div id="channel-bar" class="channel-bar">
         <span id="channel-role" class="role-badge"></span>
         <span id="channel-conn" class="conn"></span>
         <button id="become-sender" class="button" type="button" hidden>Стать отправителем</button>
       </div>
 
-      <div id="channel-invite" class="invite" hidden>
-        <img id="channel-qr" class="share-qr" alt="QR-код для второго устройства" width="232" height="232">
+      <section id="channel-invite" class="invite" aria-labelledby="invite-title" hidden>
+        <img id="channel-qr" class="share-qr" alt="QR-код для второго устройства" width="200" height="200">
         <div class="invite-body">
-          <h2 class="invite-title">Ждём второе устройство</h2>
-          <p class="invite-hint">Отсканируйте QR-код камерой телефона или откройте ссылку.</p>
-          <p class="invite-hint">
-            Или введите код на главной странице: <span id="channel-code" class="channel-code"></span>
-          </p>
-          <div class="share-link-row">
-            <input id="channel-url" class="share-url" type="text" readonly>
-            <button id="channel-url-copy" class="button" type="button">Скопировать</button>
-          </div>
+          <h2 id="invite-title" class="invite-title">Подключите второе устройство</h2>
+          <ol class="invite-steps">
+            <li><div class="step">Отсканируйте QR-код камерой телефона.</div></li>
+            <li>
+              <div class="step">
+                Или введите код на главной странице:
+                <span id="channel-code" class="channel-code"></span>
+              </div>
+            </li>
+            <li>
+              <div class="step">
+                <label for="channel-url">Или отправьте ссылку:</label>
+                <div class="share-link-row">
+                  <input id="channel-url" class="share-url" type="text" readonly>
+                  <button id="channel-url-copy" class="button" type="button">Скопировать</button>
+                </div>
+              </div>
+            </li>
+          </ol>
         </div>
-      </div>
+      </section>
 
       <div id="channel-compose" class="compose" hidden>
+        <label class="section-title" for="channel-text">Сообщение</label>
         <textarea
           id="channel-text"
           class="editor compose-editor"
@@ -233,15 +244,22 @@
         <ul id="channel-uploads" class="upload-list"></ul>
       </div>
 
-      <p id="feed-empty" class="feed-empty">
-        Сообщений пока нет. Текст живёт минуту, файл — 5 минут или до скачивания.
-      </p>
-      <ul id="feed" class="feed"></ul>
+      <section id="feed-section" class="feed-section" aria-labelledby="feed-title" hidden>
+        <div class="feed-head">
+          <h2 id="feed-title" class="section-title">
+            Сообщения <span class="section-count">сначала новые</span>
+          </h2>
+          <span class="feed-note">Текст живёт минуту, файл — 5 минут или до скачивания</span>
+        </div>
+        <p id="feed-empty" class="feed-empty">Сообщений пока нет.</p>
+        <ul id="feed" class="feed"></ul>
+      </section>
 
-      <div id="channel-closed" class="burn-confirm" hidden>
-        <h2 id="closed-title" class="burn-confirm-title"></h2>
-        <p id="closed-text" class="burn-confirm-text"></p>
-        <button id="closed-action" class="button primary" type="button"></button>
+      <div id="channel-closed" class="gate" hidden>
+        <svg class="gate-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+        <h2 id="closed-title" class="gate-title"></h2>
+        <p id="closed-text" class="gate-text"></p>
+        <button id="closed-action" class="button primary gate-action" type="button"></button>
       </div>
     </section>
 

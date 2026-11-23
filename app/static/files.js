@@ -363,12 +363,14 @@ function createFileCard(file, { status = "", onReceived } = {}) {
     const download = new OneTimeDownload(file, (part) => progress.set(part));
     button.addEventListener("click", async () => {
       button.disabled = true;
+      card.classList.remove("interrupted");
       statusEl.textContent = "Скачивается…";
       try {
         await download.run();
         actions.replaceChildren();
         progress.hide();
         statusEl.textContent = "Скачано";
+        card.classList.add("received");
         onReceived?.();
       } catch (error) {
         button.disabled = false;
@@ -380,6 +382,7 @@ function createFileCard(file, { status = "", onReceived } = {}) {
         }
         button.textContent = "Продолжить";
         statusEl.textContent = "Связь оборвалась — можно продолжить с того же места";
+        card.classList.add("interrupted");
       }
     });
     actions.append(button);
@@ -396,6 +399,7 @@ function createFileCard(file, { status = "", onReceived } = {}) {
       actions.replaceChildren();
       progress.hide();
       statusEl.textContent = text;
+      card.classList.add("received");
     },
   };
 }

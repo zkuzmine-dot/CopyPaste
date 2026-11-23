@@ -767,28 +767,7 @@ kbd {
   }
 }
 
-.burn-confirm {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  max-width: 440px;
-  padding: 24px 0 8px;
-}
-
-.burn-confirm-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.burn-confirm-text {
-  margin: 0;
-  color: var(--muted);
-}
-
-/* Экраны перед заметкой: пароль, одноразовая, «не найдена» */
+/* Экраны-заглушки: пароль, одноразовая, «не найдена», закрытый канал */
 .gate {
   display: flex;
   flex-direction: column;
@@ -971,6 +950,22 @@ kbd {
   display: none;
 }
 
+.file-card.interrupted .file-status {
+  color: var(--warn);
+}
+
+.file-card.interrupted .progress-bar {
+  background: var(--warn);
+}
+
+.file-card.received .file-name {
+  color: var(--muted);
+}
+
+.file-card.received .file-status {
+  color: var(--ok);
+}
+
 .dropping {
   outline: 2px dashed var(--primary);
   outline-offset: 4px;
@@ -1018,28 +1013,55 @@ kbd {
 
 .conn {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
+}
+
+.conn:empty {
+  display: none;
+}
+
+/* Точка состояния: полая — ждём или нет в сети, зелёная — в сети, янтарная — нет связи */
+.conn::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.conn[data-state="online"]::before {
+  background: var(--live);
+  border-color: var(--live);
+}
+
+.conn[data-state="problem"] {
+  color: var(--warn);
+}
+
+.conn[data-state="problem"]::before {
+  background: var(--warn);
+  border-color: var(--warn);
 }
 
 .invite {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 28px;
+  align-items: flex-start;
+  gap: 32px;
   padding: 28px;
   border: 1px solid var(--line);
 }
 
-.invite .share-qr {
-  align-self: center;
-}
-
 .invite-body {
-  flex: 1;
-  min-width: 240px;
+  flex: 1 1 320px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 20px;
 }
 
 .invite-title {
@@ -1049,14 +1071,52 @@ kbd {
   letter-spacing: -0.01em;
 }
 
-.invite-hint {
+.invite-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.invite-steps > li {
+  display: flex;
+  gap: 14px;
+  counter-increment: step;
+}
+
+.invite-steps > li::before {
+  content: counter(step);
+  flex: none;
+  width: 16px;
   color: var(--muted);
+  font-family: var(--mono);
+}
+
+.step {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* На телефоне кнопка уходит под ссылку, а не сжимает её до нечитаемого обрывка */
+.step .share-link-row {
+  flex-wrap: wrap;
+}
+
+.step .share-url {
+  flex: 1 1 180px;
 }
 
 .channel-code {
+  display: flex;
+  gap: 0.6em;
   color: var(--text);
-  font: 500 18px var(--mono);
+  font: 500 28px/1.2 var(--mono);
   letter-spacing: 0.08em;
 }
 
@@ -1077,13 +1137,33 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.feed-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.feed-note {
   color: var(--muted);
+  font-size: 13px;
 }
 
 .feed-empty {
   margin: 0;
+  padding: 16px 0;
   color: var(--muted);
   font-size: 13px;
+  border-top: 1px solid var(--line);
 }
 
 .feed {
@@ -1096,15 +1176,34 @@ kbd {
 }
 
 .feed:empty {
-  border-top: 0;
+  display: none;
 }
 
+/* Время | содержимое | действие. У файла кнопки внутри карточки: тело до правого края */
 .feed-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 16px;
   padding: 16px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.feed-item.file .feed-body {
+  grid-column: 2 / -1;
+}
+
+.feed-time {
+  padding-top: 2px;
+  color: var(--muted);
+  font: 12px var(--mono);
+}
+
+.feed-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .feed-item .file-preview {
@@ -1121,15 +1220,24 @@ kbd {
   font: 14px/1.6 var(--mono);
 }
 
-.feed-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.feed-left {
   color: var(--muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
-.feed-left {
-  font-variant-numeric: tabular-nums;
+@media (max-width: 520px) {
+  .feed-item {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 4px 12px;
+  }
+
+  .channel-code {
+    font-size: 24px;
+  }
+
+  .invite {
+    padding: 16px;
+    gap: 20px;
+  }
 }
