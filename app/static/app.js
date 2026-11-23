@@ -25,6 +25,8 @@ const shareQrDownload = document.getElementById("share-qr-download");
 const homeViewEl = document.getElementById("home-view");
 const noteViewEl = document.getElementById("note-view");
 const channelViewEl = document.getElementById("channel-view");
+const navNoteEl = document.getElementById("nav-note");
+const navChannelEl = document.getElementById("nav-channel");
 const attachBtn = document.getElementById("attach");
 const attachInput = document.getElementById("attach-input");
 const attachmentListEl = document.getElementById("attachment-list");
@@ -542,10 +544,20 @@ async function shareLink() {
   }
 }
 
+function markCurrent(navEl, current) {
+  if (current) {
+    navEl.setAttribute("aria-current", "page");
+  } else {
+    navEl.removeAttribute("aria-current");
+  }
+}
+
 function showView(name) {
   homeViewEl.hidden = name !== "home";
   noteViewEl.hidden = name !== "note";
   channelViewEl.hidden = name !== "channel";
+  markCurrent(navNoteEl, name === "note");
+  markCurrent(navChannelEl, name === "channel");
 }
 
 function route() {
@@ -598,6 +610,14 @@ passwordEl.addEventListener("keydown", (event) => {
 });
 bindFilePicker(attachBtn, attachInput, addAttachments);
 acceptDroppedAndPasted(editorAreaEl, textEl, addAttachments);
+
+// Новая заметка уже открыта: переход по ссылке перезагрузил бы страницу и стёр набранное
+navNoteEl.addEventListener("click", (event) => {
+  if (location.pathname === "/note") {
+    event.preventDefault();
+    textEl.focus();
+  }
+});
 
 // Клик по затемнённому фону вокруг окна закрывает его
 shareDialog.addEventListener("click", (event) => {

@@ -13,6 +13,7 @@ const CLOSE_CHANNEL_CLOSED = 4410;
 const SLUG_PATTERN = /^[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
 
 const chooseChannelBtn = document.getElementById("choose-channel");
+const navChannelBtn = document.getElementById("nav-channel");
 const channelRoleEl = document.getElementById("channel-role");
 const channelConnEl = document.getElementById("channel-conn");
 const becomeSenderBtn = document.getElementById("become-sender");
@@ -90,8 +91,13 @@ function forgetToken(slug) {
   }
 }
 
+function setStarting(starting) {
+  chooseChannelBtn.disabled = starting;
+  navChannelBtn.disabled = starting;
+}
+
 async function startChannel() {
-  chooseChannelBtn.disabled = true;
+  setStarting(true);
   try {
     const response = await fetch(CHANNEL_API, { method: "POST" });
     if (!response.ok) {
@@ -105,7 +111,7 @@ async function startChannel() {
   } catch {
     showStatus("Не удалось связаться с сервером", "error");
   } finally {
-    chooseChannelBtn.disabled = false;
+    setStarting(false);
   }
 }
 
@@ -554,6 +560,12 @@ window.addEventListener("pageshow", (event) => {
 });
 
 chooseChannelBtn.addEventListener("click", startChannel);
+// В открытом канале пункт «Канал» — текущий раздел, а не команда открыть ещё один
+navChannelBtn.addEventListener("click", () => {
+  if (!navChannelBtn.hasAttribute("aria-current")) {
+    startChannel();
+  }
+});
 joinFormEl.addEventListener("submit", joinByCode);
 becomeSenderBtn.addEventListener("click", becomeSender);
 channelSendBtn.addEventListener("click", sendMessage);

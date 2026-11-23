@@ -174,23 +174,39 @@ a:hover {
   opacity: 1;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .page {
   max-width: 800px;
   margin: 0 auto;
-  padding: 0 24px 48px;
+  padding: 24px 24px 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-height: 100vh;
+  min-height: calc(100vh - 57px);
 }
 
 .header {
+  border-bottom: 1px solid var(--line);
+}
+
+.header-inner {
+  max-width: 800px;
+  height: 56px;
+  margin: 0 auto;
+  padding: 0 24px;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 24px;
-  height: 56px;
-  border-bottom: 1px solid var(--line);
 }
 
 .logo {
@@ -218,13 +234,38 @@ a:hover {
   color: var(--text);
 }
 
-.new-link {
-  color: var(--muted);
-  text-decoration: none;
+.nav {
+  display: flex;
+  gap: 28px;
 }
 
-.new-link:hover {
+/* Подчёркивание ложится на линию под шапкой: пункт на 1px выше её нижнего края */
+.nav-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: -1px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nav-item:hover:not(:disabled) {
   color: var(--text);
+}
+
+.nav-item:disabled {
+  cursor: progress;
+}
+
+.nav-item[aria-current="page"] {
+  border-bottom-color: var(--primary);
+  color: var(--text);
+  cursor: default;
 }
 
 /* --- поля и кнопки --- */
@@ -392,75 +433,46 @@ a:hover {
 
 .home {
   display: flex;
-  flex-direction: column;
-  gap: 32px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 48px;
   padding-top: 32px;
 }
 
-.home-title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 32px 48px;
-}
-
-.choice {
+.home-section {
+  flex: 1 1 300px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px 0 0;
-  background: none;
-  color: var(--text);
-  border: 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding-top: 20px;
   border-top: 2px solid var(--primary);
-  border-radius: 0;
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
 }
 
-/* Первый вариант — канал: «живой» светло-зелёный, как точка «в сети» */
-.choice:first-child {
+/* Канал — «живой» светло-зелёный, как точка «в сети» */
+.home-section.live {
   border-top-color: var(--live);
 }
 
-.choice:hover:not(:disabled) .choice-title {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
-.choice:hover {
-  color: var(--text);
-}
-
-.choice:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.choice-title {
+.home-section-title {
+  margin: 0;
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-.choice-text {
+.home-section-text {
+  margin: 0 0 8px;
   color: var(--muted);
 }
 
 .join-form {
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-width: 460px;
+  margin-top: 20px;
 }
 
 .join-label {
@@ -472,6 +484,17 @@ a:hover {
   font-size: 14px;
 }
 
+/* Код набирается моноширинным, а подсказка им не влезает в поле на телефоне */
+.join-form .share-url::placeholder {
+  font-family: var(--font);
+}
+
+.join-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* --- заметка --- */
 
 .note-view {
@@ -479,7 +502,6 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-top: 24px;
 }
 
 .editor-area {

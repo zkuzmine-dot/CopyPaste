@@ -7,47 +7,54 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <main class="page">
-    <header class="header">
+  <header class="header">
+    <div class="header-inner">
       <a class="logo" href="/">CopyPaste</a>
-      <a class="new-link" href="/note">Новая заметка</a>
-    </header>
+      <nav class="nav" aria-label="Разделы">
+        <a id="nav-note" class="nav-item" href="/note">Заметка</a>
+        <button id="nav-channel" class="nav-item" type="button">Канал</button>
+      </nav>
+    </div>
+  </header>
 
+  <main class="page">
     <section id="home-view" class="home" hidden>
-      <h1 class="home-title">Что хотите сделать?</h1>
-      <div class="choices">
-        <button id="choose-channel" class="choice" type="button">
-          <span class="choice-title">Обмен между устройствами</span>
-          <span class="choice-text">
-            Откройте канал на втором устройстве по QR-коду — текст и файлы будут приходить
-            мгновенно и исчезать через несколько минут.
-          </span>
-        </button>
-        <a class="choice" href="/note">
-          <span class="choice-title">Сохранить заметку</span>
-          <span class="choice-text">
-            Сохраните текст и до 10 файлов, поделитесь ссылкой. Можно задать срок хранения
-            или удалить после прочтения.
-          </span>
-        </a>
-      </div>
+      <h1 class="visually-hidden">CopyPaste: заметки и обмен между устройствами</h1>
 
-      <form id="join-form" class="join-form">
-        <label class="join-label" for="join-code">Уже есть код канала?</label>
-        <div class="share-link-row">
-          <input
-            id="join-code"
-            class="share-url"
-            type="text"
-            placeholder="Код из 8 символов или ссылка"
-            autocomplete="off"
-            autocapitalize="none"
-            spellcheck="false"
-            maxlength="200"
-          >
-          <button class="button primary" type="submit">Подключиться</button>
-        </div>
-      </form>
+      <section class="home-section" aria-labelledby="home-note-title">
+        <h2 id="home-note-title" class="home-section-title">Заметка</h2>
+        <p class="home-section-text">
+          Текст и до 10 файлов по ссылке или QR-коду. Срок хранения, одноразовое чтение, пароль.
+        </p>
+        <a class="button primary" href="/note">Новая заметка</a>
+      </section>
+
+      <section class="home-section live" aria-labelledby="home-channel-title">
+        <h2 id="home-channel-title" class="home-section-title">Канал</h2>
+        <p class="home-section-text">
+          Обмен между двумя устройствами в реальном времени. Текст живёт минуту, файл — пять
+          минут или до скачивания.
+        </p>
+        <button id="choose-channel" class="button primary" type="button">Открыть канал</button>
+
+        <form id="join-form" class="join-form">
+          <label class="join-label" for="join-code">Код канала</label>
+          <div class="share-link-row">
+            <input
+              id="join-code"
+              class="share-url"
+              type="text"
+              placeholder="8 символов или ссылка"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="200"
+            >
+            <button class="button" type="submit">Подключиться</button>
+          </div>
+          <p class="join-hint">Код показан на втором устройстве под QR-кодом.</p>
+        </form>
+      </section>
     </section>
 
     <div id="note-view" class="note-view" hidden>
