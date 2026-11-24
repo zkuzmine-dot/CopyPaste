@@ -1,5 +1,7 @@
 # CopyPaste
 
+**Русский** · [English](README.en.md)
+
 Сервис для обмена текстом и файлами между устройствами (FastAPI + PostgreSQL).
 
 Два режима:
