@@ -126,6 +126,55 @@ test("при подмене ключей посередине общий клю�
   await assert.rejects(roundtrip(creatorSide.textKey, joinerSide.textKey));
 });
 
+// Как на сервере: MESSAGE_PAYLOAD_MAX_BYTES в app/schemas/channel.py
+const TEXT_MAX_UNITS = 100000;
+const PAYLOAD_MAX_BYTES = 12 + 3 * TEXT_MAX_UNITS + 16;
+
+test("текст, зашифрованный одним устройством, читает другое", async () => {
+  const { creator, joiner } = await exchange();
+
+  const payload = await cc.sealText(creator.textKey, SLUG, "код домофона: 4521");
+
+  assert.equal(await cc.openText(joiner.textKey, SLUG, payload), "код домофона: 4521");
+  assert.equal(payload.length, 12 + Buffer.byteLength("код домофона: 4521") + 16);
+  assert.equal(Buffer.from(payload).includes(Buffer.from("4521")), false);
+});
+
+test("одинаковый текст каждый раз шифруется по-разному", async () => {
+  const { creator } = await exchange();
+
+  const first = await cc.sealText(creator.textKey, SLUG, "привет");
+  const second = await cc.sealText(creator.textKey, SLUG, "привет");
+
+  assert.notDeepEqual(first, second);
+});
+
+test("самый длинный текст укладывается в лимит сервера", async () => {
+  const { creator, joiner } = await exchange();
+  // 3 байта в UTF-8 на знак UTF-16 — худший случай; эмодзи — 4 байта, но на 2 знака
+  const widest = "€".repeat(TEXT_MAX_UNITS);
+  const emoji = "😀".repeat(TEXT_MAX_UNITS / 2);
+
+  const payload = await cc.sealText(creator.textKey, SLUG, widest);
+
+  assert.equal(payload.length, PAYLOAD_MAX_BYTES);
+  assert.equal(await cc.openText(joiner.textKey, SLUG, payload), widest);
+  assert.ok((await cc.sealText(creator.textKey, SLUG, emoji)).length < PAYLOAD_MAX_BYTES);
+});
+
+test("испорченное, обрезанное или чужое сообщение не расшифровывается", async () => {
+  const { creator, joiner } = await exchange();
+  const payload = await cc.sealText(creator.textKey, SLUG, "привет");
+  const flipped = payload.slice();
+  flipped[20] ^= 1;
+
+  await assert.rejects(cc.openText(joiner.textKey, SLUG, flipped));
+  await assert.rejects(cc.openText(joiner.textKey, SLUG, payload.slice(0, -1)));
+  await assert.rejects(cc.openText(joiner.textKey, "zzzz2345", payload));
+  await assert.rejects(cc.openText(joiner.fileKey, SLUG, payload));
+  await assert.rejects(cc.openMessage(joiner.textKey, "file", SLUG, payload));
+});
+
 test("фигуры считаются из обоих ключей по 5 бит", async () => {
   const creatorKey = Uint8Array.from({ length: 65 }, (_, i) => i);
   const joinerKey = Uint8Array.from({ length: 65 }, (_, i) => 255 - i);

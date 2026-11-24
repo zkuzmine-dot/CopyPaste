@@ -10,7 +10,7 @@ from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import new_storage_key
 from app.utils.tokens import hash_token
-from tests.channel_keys import DeviceKeys, device_keys, join_ready
+from tests.channel_keys import DeviceKeys, device_keys, fake_payload, join_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -204,7 +204,7 @@ async def test_key_in_inactive_channel_not_allowed(db, receiver, joiner):
 
 async def test_send_before_keys_exchanged_not_allowed(db, joiner):
     with pytest.raises(channels_service.KeysNotReadyError):
-        await channels_service.add_message(db, joiner, "too early")
+        await channels_service.add_message(db, joiner, fake_payload("too early"))
 
     assert (await db.scalars(select(Message))).all() == []
 
@@ -232,7 +232,7 @@ async def test_send_after_one_key_not_allowed(db, receiver, joiner):
     await channels_service.submit_public_key(db, receiver, device_keys().public)
 
     with pytest.raises(channels_service.KeysNotReadyError):
-        await channels_service.add_message(db, joiner, "too early")
+        await channels_service.add_message(db, joiner, fake_payload("too early"))
 
 
 # --- активность канала ---
@@ -277,9 +277,9 @@ async def test_get_participant_token_from_other_channel(db, receiver):
 
 
 async def test_add_message(db, sender):
-    message = await channels_service.add_message(db, sender, "hello")
+    message = await channels_service.add_message(db, sender, fake_payload("hello"))
 
-    assert message.text == "hello"
+    assert message.payload == fake_payload("hello")
     assert message.sender_id == sender.id
     assert message.expires_at - message.created_at == timedelta(
         seconds=settings.MESSAGE_TTL_SECONDS
@@ -288,7 +288,7 @@ async def test_add_message(db, sender):
 
 async def test_add_message_by_receiver_not_allowed(db, receiver, sender):
     with pytest.raises(channels_service.ActionNotAllowedError):
-        await channels_service.add_message(db, receiver, "hello")
+        await channels_service.add_message(db, receiver, fake_payload("hello"))
 
     assert (await db.scalars(select(Message))).all() == []
 
@@ -297,23 +297,23 @@ async def test_add_message_updates_activity(db, sender):
     channel = await channel_of(db, sender)
     await set_last_activity(db, channel, 60)
 
-    await channels_service.add_message(db, sender, "hello")
+    await channels_service.add_message(db, sender, fake_payload("hello"))
 
     await db.refresh(channel)
     assert channel.last_activity_at == await db.scalar(select(func.now()))
 
 
 async def test_get_live_messages_in_order(db, sender):
-    first = await channels_service.add_message(db, sender, "first")
-    second = await channels_service.add_message(db, sender, "second")
+    first = await channels_service.add_message(db, sender, fake_payload("first"))
+    second = await channels_service.add_message(db, sender, fake_payload("second"))
     channel = await channel_of(db, sender)
 
     assert await channels_service.get_live_messages(db, channel) == [first, second]
 
 
 async def test_get_live_messages_skips_expired(db, sender):
-    expired = await channels_service.add_message(db, sender, "old")
-    alive = await channels_service.add_message(db, sender, "new")
+    expired = await channels_service.add_message(db, sender, fake_payload("old"))
+    alive = await channels_service.add_message(db, sender, fake_payload("new"))
     await db.execute(
         update(Message)
         .where(Message.id == expired.id)
@@ -343,9 +343,9 @@ async def test_become_sender_by_sender_not_allowed(db, receiver, sender):
 async def test_new_sender_can_send_and_old_cannot(db, receiver, sender):
     await channels_service.become_sender(db, receiver)
 
-    await channels_service.add_message(db, receiver, "from new sender")
+    await channels_service.add_message(db, receiver, fake_payload("from new sender"))
     with pytest.raises(channels_service.ActionNotAllowedError):
-        await channels_service.add_message(db, sender, "from old sender")
+        await channels_service.add_message(db, sender, fake_payload("from old sender"))
 
 
 # --- действия в закрытом канале ---
@@ -360,7 +360,7 @@ async def test_actions_in_inactive_channel_not_allowed(db, receiver, sender, clo
         await set_last_activity(db, channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)
 
     with pytest.raises(channels_service.ChannelNotFoundError):
-        await channels_service.add_message(db, sender, "late")
+        await channels_service.add_message(db, sender, fake_payload("late"))
     with pytest.raises(channels_service.ChannelNotFoundError):
         await channels_service.become_sender(db, receiver)
 
@@ -396,8 +396,8 @@ async def test_close_if_idle_on_closed_channel(db, receiver):
 
 
 async def test_delete_expired_messages(db, sender):
-    expired = await channels_service.add_message(db, sender, "old")
-    live = await channels_service.add_message(db, sender, "new")
+    expired = await channels_service.add_message(db, sender, fake_payload("old"))
+    live = await channels_service.add_message(db, sender, fake_payload("new"))
     await db.execute(
         update(Message)
         .where(Message.id == expired.id)
@@ -409,7 +409,7 @@ async def test_delete_expired_messages(db, sender):
 
 
 async def test_delete_inactive_channels(db, sender):
-    await channels_service.add_message(db, sender, "text")
+    await channels_service.add_message(db, sender, fake_payload("text"))
     idle, _ = await channels_service.create_channel(db)
     closed, _ = await channels_service.create_channel(db)
     await set_last_activity(db, idle.channel, settings.CHANNEL_IDLE_TIMEOUT_SECONDS + 1)

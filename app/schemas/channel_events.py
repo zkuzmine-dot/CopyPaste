@@ -3,8 +3,13 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, TypeAdapter
 
 from app.db.models.channel import ParticipantRole
-from app.schemas.channel import Base64Url, KeyExchangeRead, MessageRead, PublicKey
-from app.schemas.note import NoteText
+from app.schemas.channel import (
+    Base64Url,
+    EncryptedText,
+    KeyExchangeRead,
+    MessageRead,
+    PublicKey,
+)
 
 # --- клиент → сервер ---
 
@@ -16,7 +21,7 @@ class AuthEvent(BaseModel):
 
 class SendEvent(BaseModel):
     type: Literal["send"]
-    text: NoteText
+    payload: EncryptedText
 
 
 class SendFileEvent(BaseModel):

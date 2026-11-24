@@ -144,9 +144,9 @@ async def _load_state(db: AsyncSession, participant_id: int) -> LoadedState:
     )
 
 
-async def _add_message(db: AsyncSession, participant_id: int, text: str) -> MessageEvent:
+async def _add_message(db: AsyncSession, participant_id: int, payload: bytes) -> MessageEvent:
     participant = await _get_participant(db, participant_id)
-    message = await channels_service.add_message(db, participant, text)
+    message = await channels_service.add_message(db, participant, payload)
     return MessageEvent.model_validate(message)
 
 
@@ -261,9 +261,9 @@ async def _handle_event(
     me: int,
 ) -> None:
     match event:
-        case SendEvent(text=text):
+        case SendEvent(payload=payload):
             try:
-                message = await run_db(factory, lambda db: _add_message(db, me, text))
+                message = await run_db(factory, lambda db: _add_message(db, me, payload))
             except channels_service.ActionNotAllowedError:
                 error = ErrorEvent(code="not_sender", detail="Only the sender can send messages")
                 await connection.send(error)

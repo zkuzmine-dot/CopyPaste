@@ -8,7 +8,9 @@ from tests.channel_keys import (
     b64url,
     device_keys,
     exchange_keys_by_token,
+    fake_payload,
     join_by_http,
+    text_of,
 )
 
 pytestmark = pytest.mark.anyio
@@ -141,12 +143,12 @@ async def test_state_shows_messages(client, db, created, joined, joiner_keys):
     await exchange_keys_by_token(db, created["slug"], joined["token"], joiner_keys)
     channel = await channels_service.get_active_channel(db, created["slug"])
     sender = await channels_service.get_participant(db, channel, joined["token"])
-    await channels_service.add_message(db, sender, "hello")
+    await channels_service.add_message(db, sender, fake_payload("hello"))
 
     messages = (await get_state(client, created["slug"], created["token"])).json()["messages"]
 
-    assert [m["text"] for m in messages] == ["hello"]
-    assert set(messages[0]) == {"id", "kind", "text", "file", "created_at", "expires_at"}
+    assert [text_of(m) for m in messages] == ["hello"]
+    assert set(messages[0]) == {"id", "kind", "payload", "file", "created_at", "expires_at"}
     assert messages[0]["kind"] == "text"
     assert messages[0]["file"] is None
 

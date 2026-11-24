@@ -11,7 +11,7 @@ from app.services import files as files_service
 from app.services import notes as notes_service
 from app.settings import settings
 from app.storage.base import new_storage_key
-from tests.channel_keys import join_ready
+from tests.channel_keys import fake_payload, join_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -51,7 +51,7 @@ async def note(db):
 async def message(db):
     receiver, _ = await channels_service.create_channel(db)
     sender, _ = await join_ready(db, receiver.channel.slug)
-    return await channels_service.add_message(db, sender, "hi")
+    return await channels_service.add_message(db, sender, fake_payload("hi"))
 
 
 # --- создание и поиск ---

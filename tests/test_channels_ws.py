@@ -6,17 +6,24 @@ from sqlalchemy import func, select, update
 from app.api.channels import ws as channels_ws
 from app.db.models.channel import Channel, Message, Participant
 from app.db.models.file import FileOrigin
-from app.schemas.note import NOTE_TEXT_MAX_LENGTH
+from app.schemas.channel import MESSAGE_PAYLOAD_MAX_BYTES, MESSAGE_PAYLOAD_MIN_BYTES
 from app.services import channels as channels_service
 from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import new_storage_key
-from tests.channel_keys import b64url, device_keys, exchange_keys_by_token, join_by_http
+from tests.channel_keys import (
+    b64url,
+    device_keys,
+    exchange_keys_by_token,
+    fake_payload_b64,
+    join_by_http,
+    text_of,
+)
 
 pytestmark = pytest.mark.anyio
 
 URL = "/api/channels"
-# Больше 65 КиБ по умолчанию у клиента: самый длинный текст в JSON — около 600 КБ
+# Больше 65 КиБ по умолчанию у клиента: самый длинный шифротекст в base64 — около 400 КБ
 CLIENT_MAX_MESSAGE_BYTES = 4 * 1024 * 1024
 
 
@@ -64,6 +71,10 @@ async def pending(client) -> dict:
 
 def connect(client, slug: str):
     return client.websocket(f"/ws/channels/{slug}", max_message_size_bytes=CLIENT_MAX_MESSAGE_BYTES)
+
+
+def send_text(label: str) -> dict:
+    return {"type": "send", "payload": fake_payload_b64(label)}
 
 
 async def auth(ws, token: str) -> dict:
@@ -126,7 +137,7 @@ async def test_state_before_peer_joined(client):
     "first_message",
     [
         {"type": "auth", "token": "wrong"},
-        {"type": "send", "text": "hi"},
+        send_text("hi"),
         {"type": "auth"},
         "not json",
     ],
@@ -208,8 +219,8 @@ async def test_same_token_replaces_old_connection(client, channel):
             await expect_close(old, 4409)
 
             # Собеседник не видит offline/online: следующее его событие — уже сообщение
-            await new.send_json({"type": "send", "text": "from new tab"})
-            assert (await receiver.receive_json())["text"] == "from new tab"
+            await new.send_json(send_text("from new tab"))
+            assert text_of(await receiver.receive_json()) == "from new tab"
 
 
 # --- сообщения ---
@@ -224,31 +235,31 @@ async def test_send_reaches_both(client, channel):
         await auth(sender, channel["sender"])
         await receiver.receive_json()  # peer_status
 
-        await sender.send_json({"type": "send", "text": "привет"})
+        await sender.send_json(send_text("привет"))
 
         for ws in (receiver, sender):
             message = await ws.receive_json()
             assert message["type"] == "message"
-            assert message["text"] == "привет"
+            assert text_of(message) == "привет"
             assert {"id", "created_at", "expires_at"} <= message.keys()
 
 
 async def test_state_contains_live_messages(client, channel):
     async with connect(client, channel["slug"]) as sender:
         await auth(sender, channel["sender"])
-        await sender.send_json({"type": "send", "text": "первое"})
+        await sender.send_json(send_text("первое"))
         await sender.receive_json()
 
     async with connect(client, channel["slug"]) as receiver:
         state = await auth(receiver, channel["receiver"])
 
-    assert [m["text"] for m in state["messages"]] == ["первое"]
+    assert [text_of(m) for m in state["messages"]] == ["первое"]
 
 
 async def test_send_by_receiver_is_error(client, channel, factory):
     async with connect(client, channel["slug"]) as receiver:
         await auth(receiver, channel["receiver"])
-        await receiver.send_json({"type": "send", "text": "nope"})
+        await receiver.send_json(send_text("nope"))
         error = await receiver.receive_json()
 
     assert error["code"] == "not_sender"
@@ -258,12 +269,25 @@ async def test_send_by_receiver_is_error(client, channel, factory):
 @pytest.mark.parametrize(
     "event",
     [
-        {"type": "send", "text": ""},
-        {"type": "send", "text": "x" * (NOTE_TEXT_MAX_LENGTH + 1)},
+        {"type": "send", "payload": b64url(bytes(MESSAGE_PAYLOAD_MIN_BYTES - 1))},
+        {"type": "send", "payload": b64url(bytes(MESSAGE_PAYLOAD_MAX_BYTES + 1))},
+        {"type": "send", "payload": "не base64"},
+        # 4n+1 знаков base64 не бывает: такой строке не подобрать «=»
+        {"type": "send", "payload": "A" * 45},
+        # Открытый текст, как слали страницы до шифрования
+        {"type": "send", "text": "открытый текст"},
         {"type": "unknown"},
         {"text": "no type"},
     ],
-    ids=["empty_text", "too_long", "unknown_type", "no_type"],
+    ids=[
+        "too_short",
+        "too_long",
+        "not_base64url",
+        "impossible_length",
+        "plain_text",
+        "unknown_type",
+        "no_type",
+    ],
 )
 async def test_invalid_event_is_error_and_connection_stays(client, channel, factory, event):
     async with connect(client, channel["slug"]) as sender:
@@ -271,8 +295,8 @@ async def test_invalid_event_is_error_and_connection_stays(client, channel, fact
         await sender.send_json(event)
         error = await sender.receive_json()
 
-        await sender.send_json({"type": "send", "text": "still works"})
-        assert (await sender.receive_json())["text"] == "still works"
+        await sender.send_json(send_text("still works"))
+        assert text_of(await sender.receive_json()) == "still works"
 
     assert error["type"] == "error"
     assert error["code"] == "invalid_event"
@@ -295,12 +319,12 @@ async def test_become_sender_swaps_roles_for_both(client, channel):
         assert await receiver.receive_json() == {"type": "roles_changed", "role": "sender"}
         assert await sender.receive_json() == {"type": "roles_changed", "role": "receiver"}
 
-        await sender.send_json({"type": "send", "text": "old sender"})
+        await sender.send_json(send_text("old sender"))
         assert (await sender.receive_json())["code"] == "not_sender"
 
-        await receiver.send_json({"type": "send", "text": "new sender"})
-        assert (await receiver.receive_json())["text"] == "new sender"
-        assert (await sender.receive_json())["text"] == "new sender"
+        await receiver.send_json(send_text("new sender"))
+        assert text_of(await receiver.receive_json()) == "new sender"
+        assert text_of(await sender.receive_json()) == "new sender"
 
 
 async def test_become_sender_alone_then_peer_joins_as_receiver(client):
@@ -325,8 +349,8 @@ async def test_become_sender_alone_then_peer_joins_as_receiver(client):
             await peer.send_json({"type": "public_key", "key": peer_keys.public_b64})
             assert (await creator.receive_json())["type"] == "peer_key"
 
-            await creator.send_json({"type": "send", "text": "от создателя"})
-            assert (await peer.receive_json())["text"] == "от создателя"
+            await creator.send_json(send_text("от создателя"))
+            assert text_of(await peer.receive_json()) == "от создателя"
 
 
 async def test_become_sender_by_sender_is_error(client, channel):
@@ -415,8 +439,8 @@ async def test_key_exchange_over_websocket(client, pending, factory):
         await joiner.send_json({"type": "public_key", "key": joiner_keys.public_b64})
         assert await receive(creator) == {"type": "peer_key", "key": joiner_keys.public_b64}
 
-        await joiner.send_json({"type": "send", "text": "теперь можно"})
-        assert (await receive(creator))["text"] == "теперь можно"
+        await joiner.send_json(send_text("теперь можно"))
+        assert text_of(await receive(creator)) == "теперь можно"
 
     assert await stored_keys(factory) == [creator_keys.public, joiner_keys.public]
 
@@ -484,7 +508,7 @@ async def test_joiner_key_not_matching_commitment_is_error(client, pending, fact
         await joiner.send_json({"type": "public_key", "key": device_keys().public_b64})
         assert (await receive(joiner))["code"] == "key_mismatch"
 
-        await joiner.send_json({"type": "send", "text": "без ключей"})
+        await joiner.send_json(send_text("без ключей"))
         assert (await receive(joiner))["code"] == "keys_not_ready"
 
     creator_key, joiner_key = await stored_keys(factory)
@@ -534,7 +558,7 @@ async def test_invalid_public_key_is_invalid_event(client, pending, factory, key
 async def test_send_before_keys_is_error(client, pending, factory):
     async with connect(client, pending["slug"]) as joiner:
         await auth(joiner, pending["joiner"])
-        await joiner.send_json({"type": "send", "text": "рано"})
+        await joiner.send_json(send_text("рано"))
         error = await receive(joiner)
 
     assert error["code"] == "keys_not_ready"
@@ -598,8 +622,8 @@ async def test_activity_postpones_idle_close(client, channel, monkeypatch):
         for i in range(5):
             if i:
                 await anyio.sleep(0.8)
-            await sender.send_json({"type": "send", "text": str(i)})
-            assert (await sender.receive_json())["text"] == str(i)
+            await sender.send_json(send_text(str(i)))
+            assert text_of(await sender.receive_json()) == str(i)
 
         assert await sender.receive_json() == {"type": "channel_closed", "reason": "idle"}
 
@@ -612,7 +636,7 @@ async def test_channel_deleted_by_cleanup_closes_on_next_action(client, channel,
             await channels_service.close_channel(db, active)
             assert await channels_service.delete_inactive_channels(db) == 1
 
-        await sender.send_json({"type": "send", "text": "в пустоту"})
+        await sender.send_json(send_text("в пустоту"))
         assert await sender.receive_json() == {"type": "channel_closed", "reason": "idle"}
         await expect_close(sender, 4410)
 
@@ -627,10 +651,10 @@ async def test_rate_limit(client, channel, factory, monkeypatch):
     async with connect(client, channel["slug"]) as sender:
         await auth(sender, channel["sender"])
         for i in range(3):
-            await sender.send_json({"type": "send", "text": str(i)})
+            await sender.send_json(send_text(str(i)))
         events = [await sender.receive_json() for _ in range(3)]
 
-    assert [e.get("text") for e in events[:2]] == ["0", "1"]
+    assert [text_of(e) for e in events[:2]] == ["0", "1"]
     assert events[2]["code"] == "rate_limited"
     assert await count_messages(factory) == 2
 
@@ -640,7 +664,7 @@ async def test_too_big_message_closes_1009(client, channel, factory, monkeypatch
 
     async with connect(client, channel["slug"]) as sender:
         await auth(sender, channel["sender"])
-        await sender.send_json({"type": "send", "text": "x" * 100})
+        await sender.send_json(send_text("x" * 100))
         await expect_close(sender, 1009)
 
     assert await count_messages(factory) == 0
@@ -655,10 +679,10 @@ async def test_too_big_auth_closes_1009(client, channel, monkeypatch):
 
 
 async def test_size_limit_fits_longest_text(client, channel):
-    # Худший случай для JSON: каждый символ экранируется как \u0001 — 6 байт
-    text = "\u0001" * NOTE_TEXT_MAX_LENGTH
+    # Самый длинный текст — 100 000 знаков по 3 байта в UTF-8, его шифротекст в base64
+    payload = b64url(bytes(MESSAGE_PAYLOAD_MAX_BYTES))
 
     async with connect(client, channel["slug"]) as sender:
         await auth(sender, channel["sender"])
-        await sender.send_json({"type": "send", "text": text})
-        assert (await sender.receive_json())["text"] == text
+        await sender.send_json({"type": "send", "payload": payload})
+        assert (await sender.receive_json())["payload"] == payload

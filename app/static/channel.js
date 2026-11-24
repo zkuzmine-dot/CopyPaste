@@ -556,6 +556,7 @@ async function advanceHandshake(slug) {
   channel.keys = keys;
   channel.cipher = cipher;
   showShapes(cipher.shapes);
+  channel.messages.forEach(revealText);
   render();
   flushUploads();
 }
@@ -718,11 +719,19 @@ function addMessage(message) {
       status: isOwnFile(message) ? "Ждёт скачивания" : "",
     });
     body.append(card.el, left);
-  } else {
-    const copy = el("button", "button", "Скопировать");
+  }
+  let textEl = null;
+  let copy = null;
+  if (!card) {
+    copy = el("button", "button", "Скопировать");
     copy.type = "button";
-    copy.addEventListener("click", () => copyMessage(message.text));
-    body.append(el("pre", "feed-text", message.text), left);
+    copy.hidden = true;
+    // Файла нет в сообщении, когда его уже скачали и удалили с сервера
+    textEl =
+      message.kind === "text"
+        ? el("pre", "feed-text pending", "…")
+        : el("pre", "feed-text gone", "Файл больше недоступен");
+    body.append(textEl, left);
     item.append(copy);
   }
   // Новые сверху: обычно нужно именно последнее присланное
@@ -730,8 +739,29 @@ function addMessage(message) {
     .filter((m) => m.data.id < message.id)
     .sort((a, b) => b.data.id - a.data.id)[0];
   feedEl.insertBefore(item, older ? older.el : null);
-  channel.messages.set(message.id, { data: message, el: item, left, card });
-  updateLeft(channel.messages.get(message.id));
+  const entry = { data: message, el: item, left, card, textEl, copy, text: null, opening: false };
+  channel.messages.set(message.id, entry);
+  copy?.addEventListener("click", () => copyMessage(entry.text));
+  updateLeft(entry);
+  revealText(entry);
+}
+
+// До общего ключа текст ждёт: после перезагрузки state приходит раньше, чем он посчитан
+async function revealText(entry) {
+  const cipher = channel.cipher;
+  if (entry.data.kind !== "text" || !cipher || entry.text !== null || entry.opening) {
+    return;
+  }
+  entry.opening = true;
+  try {
+    entry.text = await openText(cipher.textKey, channel.slug, fromBase64Url(entry.data.payload));
+    entry.textEl.textContent = entry.text;
+    entry.textEl.classList.remove("pending");
+    entry.copy.hidden = false;
+  } catch {
+    entry.textEl.textContent = "Не удалось расшифровать сообщение";
+    entry.textEl.classList.replace("pending", "undecryptable");
+  }
 }
 
 function updateLeft(entry) {
@@ -759,7 +789,7 @@ async function copyMessage(text) {
   }
 }
 
-function sendMessage() {
+async function sendMessage() {
   const text = channelTextEl.value;
   if (!text.trim()) {
     showStatus("Нечего отправлять: поле пустое", "error");
@@ -769,13 +799,18 @@ function sendMessage() {
     showStatus(KEYS_PENDING_TEXT, "error");
     return;
   }
-  if (!channel.ws || channel.ws.readyState !== WebSocket.OPEN) {
+  const slug = channel.slug;
+  const payload = await sealText(channel.cipher.textKey, slug, text);
+  if (!wsOpen() || channel.slug !== slug) {
     showStatus("Нет связи с каналом", "error");
     return;
   }
-  channel.ws.send(JSON.stringify({ type: "send", text }));
-  channelTextEl.value = "";
-  updateChannelCounter();
+  channel.ws.send(JSON.stringify({ type: "send", payload: toBase64Url(payload) }));
+  // Пока шифровали, могли дописать ещё — тогда поле не трогаем
+  if (channelTextEl.value === text) {
+    channelTextEl.value = "";
+    updateChannelCounter();
+  }
   channelTextEl.focus();
 }
 

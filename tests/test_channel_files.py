@@ -141,7 +141,7 @@ async def test_send_file_reaches_both_with_links_only_for_receiver(client, chann
         own, theirs = await sender.receive_json(), await receiver.receive_json()
 
     for event in (own, theirs):
-        assert (event["type"], event["kind"], event["text"]) == ("message", "file", None)
+        assert (event["type"], event["kind"], event["payload"]) == ("message", "file", None)
         assert (event["file"]["id"], event["file"]["name"]) == (file_id, "photo.png")
     own_links = (
         own["file"]["download_url"],

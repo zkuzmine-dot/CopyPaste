@@ -1,4 +1,8 @@
-"""Ключи устройств для тестов канала: настоящие пары P-256, как у WebCrypto в браузере."""
+"""Ключи и шифротекст для тестов канала.
+
+Ключи — настоящие пары P-256, как у WebCrypto в браузере. Текст сервер не расшифровывает, поэтому
+вместо шифротекста — метка между нулевыми «nonce» и «тегом»: нужной длины, и её видно в проверках.
+"""
 
 import base64
 from dataclasses import dataclass
@@ -10,12 +14,26 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.channel import Participant
+from app.schemas.channel import MESSAGE_NONCE_BYTES, MESSAGE_TAG_BYTES
 from app.services import channels as channels_service
 from app.utils import channel_keys
 
 
 def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def fake_payload(label: str) -> bytes:
+    return bytes(MESSAGE_NONCE_BYTES) + label.encode() + bytes(MESSAGE_TAG_BYTES)
+
+
+def fake_payload_b64(label: str) -> str:
+    return b64url(fake_payload(label))
+
+
+def text_of(message: dict) -> str:
+    raw = base64.urlsafe_b64decode(message["payload"] + "==")
+    return raw[MESSAGE_NONCE_BYTES:-MESSAGE_TAG_BYTES].decode()
 
 
 @dataclass(frozen=True)

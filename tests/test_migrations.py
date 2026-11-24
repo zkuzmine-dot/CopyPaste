@@ -92,6 +92,34 @@ def test_keys_migration_closes_open_channels(config):
     assert closed == {"open0001": True, "closed01": False}
 
 
+def test_encryption_migration_drops_plain_texts(config):
+    command.upgrade(config, "c8e5a2f71d3b")
+    on_async_connection(
+        lambda connection: connection.execute(
+            text(
+                "WITH c AS (INSERT INTO channels (slug) VALUES ('open0002') RETURNING id), "
+                "p AS (INSERT INTO participants (channel_id, token_hash, role) "
+                "SELECT id, 'hash', 'sender' FROM c RETURNING id, channel_id) "
+                "INSERT INTO messages (channel_id, sender_id, kind, text, expires_at) "
+                "SELECT channel_id, id, 'text', 'открытый текст', now() + interval '1 minute' "
+                "FROM p"
+            )
+        )
+    )
+
+    command.upgrade(config, "d3a7f9c1e2b4")
+
+    messages, open_channels = on_async_connection(
+        lambda connection: connection.execute(
+            text(
+                "SELECT (SELECT count(*) FROM messages), "
+                "(SELECT count(*) FROM channels WHERE closed_at IS NULL)"
+            )
+        ).one()
+    )
+    assert (messages, open_channels) == (0, 0)
+
+
 def test_models_match_migrations(config):
     command.upgrade(config, "head")
 

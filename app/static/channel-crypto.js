@@ -6,6 +6,7 @@ const CHANNEL_CRYPTO_LABEL = "copypaste/channel/v1";
 const DEVICE_KEY_ALGORITHM = { name: "ECDH", namedCurve: "P-256" };
 const SHAPE_COUNT = 4;
 const SHAPE_BITS = 5;
+const MESSAGE_NONCE_BYTES = 12;
 
 const textEncoder = new TextEncoder();
 
@@ -100,6 +101,46 @@ async function verificationShapes(creatorKey, joinerKey) {
   });
 }
 
+// Код канала и тип сообщения входят в AAD: шифротекст не перенести в другой канал и не выдать
+// текст за описание файла
+function messageAad(kind, slug) {
+  return textEncoder.encode(`${CHANNEL_CRYPTO_LABEL}/${kind}/${slug}`);
+}
+
+// Сообщение — nonce (12 случайных байт), шифротекст и тег AES-GCM
+async function sealMessage(key, kind, slug, plain) {
+  const nonce = crypto.getRandomValues(new Uint8Array(MESSAGE_NONCE_BYTES));
+  const sealed = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce, additionalData: messageAad(kind, slug) },
+    key,
+    plain,
+  );
+  return concatBytes(nonce, new Uint8Array(sealed));
+}
+
+// Испорченное, чужое или обрезанное сообщение не расшифруется: ошибка, а не мусор
+async function openMessage(key, kind, slug, payload) {
+  const plain = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: payload.subarray(0, MESSAGE_NONCE_BYTES),
+      additionalData: messageAad(kind, slug),
+    },
+    key,
+    payload.subarray(MESSAGE_NONCE_BYTES),
+  );
+  return new Uint8Array(plain);
+}
+
+function sealText(key, slug, text) {
+  return sealMessage(key, "text", slug, textEncoder.encode(text));
+}
+
+async function openText(key, slug, payload) {
+  const plain = await openMessage(key, "text", slug, payload);
+  return new TextDecoder("utf-8", { fatal: true }).decode(plain);
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     cryptoAvailable,
@@ -110,5 +151,9 @@ if (typeof module !== "undefined") {
     matchesCommitment,
     deriveChannelCipher,
     verificationShapes,
+    sealMessage,
+    openMessage,
+    sealText,
+    openText,
   };
 }

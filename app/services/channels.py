@@ -196,7 +196,7 @@ async def _lock_as_sender(db: AsyncSession, participant: Participant) -> None:
 
 
 async def _insert_message(
-    db: AsyncSession, participant: Participant, kind: MessageKind, text: str | None, ttl: int
+    db: AsyncSession, participant: Participant, kind: MessageKind, payload: bytes | None, ttl: int
 ) -> Message:
     # INSERT ... RETURNING, а не db.add: срок считает БД (её now()), и он сразу приходит в
     # объект. После обычного flush атрибут с SQL-выражением «протухает» и догружается
@@ -207,7 +207,7 @@ async def _insert_message(
             channel_id=participant.channel_id,
             sender_id=participant.id,
             kind=kind,
-            text=text,
+            payload=payload,
             expires_at=func.now() + timedelta(seconds=ttl),
         )
         .returning(Message)
@@ -215,10 +215,11 @@ async def _insert_message(
     return (await db.scalars(stmt)).one()
 
 
-async def add_message(db: AsyncSession, participant: Participant, text: str) -> Message:
+async def add_message(db: AsyncSession, participant: Participant, payload: bytes) -> Message:
+    """payload — текст, зашифрованный в браузере. Сервер его не читает и не проверяет."""
     await _lock_as_sender(db, participant)
     message = await _insert_message(
-        db, participant, MessageKind.TEXT, text, settings.MESSAGE_TTL_SECONDS
+        db, participant, MessageKind.TEXT, payload, settings.MESSAGE_TTL_SECONDS
     )
     await _touch(db, participant.channel_id)
     return message

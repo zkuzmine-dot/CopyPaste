@@ -10,7 +10,7 @@ from app.services import channels as channels_service
 from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import new_storage_key
-from tests.channel_keys import device_keys, join_ready
+from tests.channel_keys import device_keys, fake_payload, join_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -153,7 +153,7 @@ async def test_send_during_role_swap_is_rejected(factory, monkeypatch):
             await swap_holds_lock.wait()
             try:
                 async with db.begin():
-                    await channels_service.add_message(db, old_sender, "too late")
+                    await channels_service.add_message(db, old_sender, fake_payload("too late"))
                 result.append("sent")
             except channels_service.ActionNotAllowedError:
                 result.append("rejected")
@@ -199,7 +199,7 @@ async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
     async def send() -> None:
         async with factory() as db, db.begin():
             sender = await load_participant(db, slug, ParticipantRole.SENDER)
-            await channels_service.add_message(db, sender, "just in time")
+            await channels_service.add_message(db, sender, fake_payload("just in time"))
 
     deleted: list[int] = []
 
@@ -216,8 +216,10 @@ async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
 
     assert deleted == [0]
     async with factory() as db:
-        texts = await db.scalars(select(Message.text).join(Channel).where(Channel.slug == slug))
-        assert texts.all() == ["just in time"]
+        payloads = await db.scalars(
+            select(Message.payload).join(Channel).where(Channel.slug == slug)
+        )
+        assert payloads.all() == [fake_payload("just in time")]
 
 
 async def test_send_file_during_role_swap_is_rejected(factory, monkeypatch):

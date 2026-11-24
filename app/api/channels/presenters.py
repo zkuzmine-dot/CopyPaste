@@ -16,7 +16,7 @@ def message_read(message: Message, stored: StoredFile | None, *, with_links: boo
     return MessageRead(
         id=message.id,
         kind=message.kind,
-        text=message.text,
+        payload=message.payload,
         file=file,
         created_at=message.created_at,
         expires_at=message.expires_at,

@@ -1415,6 +1415,20 @@ kbd {
   font: 14px/1.6 var(--mono);
 }
 
+.feed-text.pending,
+.feed-text.gone {
+  color: var(--muted);
+}
+
+.feed-text.undecryptable {
+  color: var(--error);
+  font-family: var(--font);
+}
+
+.feed-text.gone {
+  font-family: var(--font);
+}
+
 .feed-left {
   color: var(--muted);
   font-size: 12px;

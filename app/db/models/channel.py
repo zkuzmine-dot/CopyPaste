@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -66,7 +66,7 @@ class Message(Base):
         CheckConstraint("kind IN ('text', 'file')", name="ck_messages_kind"),
         # Текст есть ровно у текстовых сообщений; файл лежит в stored_files.message_id
         CheckConstraint(
-            "(kind = 'text') = (text IS NOT NULL)", name="ck_messages_text_matches_kind"
+            "(kind = 'text') = (payload IS NOT NULL)", name="ck_messages_payload_matches_kind"
         ),
     )
 
@@ -76,6 +76,7 @@ class Message(Base):
     kind: Mapped[str] = mapped_column(
         String(8), default=MessageKind.TEXT, server_default=MessageKind.TEXT.value
     )
-    text: Mapped[str | None] = mapped_column(Text)
+    # Текст, зашифрованный в браузере: nonce, шифротекст и тег. Ключа у сервера нет
+    payload: Mapped[bytes | None] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
