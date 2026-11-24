@@ -173,7 +173,7 @@ async function startChannel() {
     const keys = await createDeviceKeys();
     const response = await fetch(CHANNEL_API, { method: "POST" });
     if (!response.ok) {
-      showStatus(`Не удалось создать канал (${response.status})`, "error");
+      showStatus(msg("Не удалось создать канал ({status})", { status: String(response.status) }), "error");
       return;
     }
     const created = await response.json();
@@ -252,7 +252,10 @@ async function joinChannel(slug) {
       return null;
     }
     if (!response.ok) {
-      showClosed("Не удалось подключиться", `Ошибка сервера (${response.status}).`);
+      showClosed(
+        "Не удалось подключиться",
+        msg("Ошибка сервера ({status}).", { status: String(response.status) }),
+      );
       return null;
     }
     const joined = await response.json();
@@ -401,24 +404,25 @@ function handleEvent(event) {
   render();
 }
 
+// Ошибка от сервера → msg(). Неизвестный код показываем как есть: detail сервер пишет по-английски
 function errorText(event) {
   switch (event.code) {
     case "not_sender":
-      return "Отправлять может только отправитель";
+      return msg("Отправлять может только отправитель");
     case "not_receiver":
-      return "Вы уже отправитель";
+      return msg("Вы уже отправитель");
     case "rate_limited":
-      return "Слишком часто. Подождите секунду";
+      return msg("Слишком часто. Подождите секунду");
     case "file_not_found":
-      return "Файл не отправлен: его уже отправили или загрузка устарела";
+      return msg("Файл не отправлен: его уже отправили или загрузка устарела");
     case "keys_not_ready":
-      return KEYS_PENDING_TEXT;
+      return msg(KEYS_PENDING_TEXT);
     case "key_out_of_order":
-      return "Обмен ключами сбился. Обновите страницу";
+      return msg("Обмен ключами сбился. Обновите страницу");
     case "invalid_event":
-      return `Сервер не принял сообщение: ${event.detail}`;
+      return msg("Сервер не принял сообщение: {detail}", { detail: event.detail });
     default:
-      return event.detail;
+      return () => event.detail;
   }
 }
 
@@ -460,7 +464,7 @@ function handleClose(code) {
   // Обрыв связи (сон телефона, смена сети): переподключаемся с растущей паузой
   const delay = Math.min(1000 * 2 ** channel.retries, RECONNECT_MAX_DELAY);
   channel.retries += 1;
-  setConnection(`Нет связи, переподключение через ${Math.round(delay / 1000)} с…`);
+  setConnection(msg("Нет связи, переподключение через {seconds} с…", { seconds: Math.round(delay / 1000) }));
   channel.retryTimer = setTimeout(connect, delay);
 }
 
@@ -468,9 +472,9 @@ function showClosed(title, text, actionLabel = "Открыть новый кан
   clearInterval(channel.tickTimer);
   channel.tickTimer = null;
   channel.role = null;
-  closedTitleEl.textContent = title;
-  closedTextEl.textContent = text;
-  closedActionBtn.textContent = actionLabel;
+  setText(closedTitleEl, title);
+  setText(closedTextEl, text);
+  setText(closedActionBtn, actionLabel);
   channel.closedAction = action;
   channelClosedEl.hidden = false;
   setConnection("");
@@ -591,7 +595,7 @@ function keysMismatch() {
 
 function shapeLabel({ shape, filled }) {
   const [name, gender] = SHAPES[shape];
-  return `${name}, ${SHAPE_FILL[filled][gender]}`;
+  return `${t(name)}, ${t(SHAPE_FILL[filled][gender])}`;
 }
 
 function showShapes(shapes) {
@@ -604,7 +608,7 @@ function showShapes(shapes) {
         : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"';
       // Разметка из постоянной таблицы SHAPES, данных собеседника в ней нет
       span.innerHTML = `<svg role="img" viewBox="0 0 24 24" width="20" height="20"><g ${paint}>${SHAPES[item.shape][2]}</g></svg>`;
-      span.firstElementChild.setAttribute("aria-label", shapeLabel(item));
+      setAttr(span.firstElementChild, "aria-label", () => shapeLabel(item));
       return span;
     }),
   );
@@ -644,11 +648,11 @@ function connectionState(active) {
 function connectionText(state) {
   switch (state) {
     case "waiting":
-      return "Ждём второе устройство";
+      return msg("Ждём второе устройство");
     case "online":
-      return "Второе устройство в сети";
+      return msg("Второе устройство в сети");
     case "offline":
-      return "Второе устройство не в сети";
+      return msg("Второе устройство не в сети");
     default:
       return channel.connection;
   }
@@ -659,7 +663,7 @@ function render() {
   const isSender = channel.role === "sender";
 
   channelRoleEl.hidden = !active;
-  channelRoleEl.textContent = isSender ? "Вы отправитель" : "Вы получатель";
+  setText(channelRoleEl, isSender ? "Вы отправитель" : "Вы получатель");
   channelRoleEl.classList.toggle("sender", isSender);
 
   becomeSenderBtn.hidden = !active || isSender;
@@ -674,11 +678,11 @@ function render() {
   channelSealBtn.dataset.state = ready ? "ready" : "pending";
   channelSealBtn.disabled = !ready;
   if (ready) {
-    channelSecureTextEl.textContent = "Зашифровано";
+    setText(channelSecureTextEl, "Зашифровано");
   } else if (channel.peerOnline) {
-    channelSecureTextEl.textContent = "Обмен ключами…";
+    setText(channelSecureTextEl, "Обмен ключами…");
   } else {
-    channelSecureTextEl.textContent = "Обмен ключами: ждём второе устройство";
+    setText(channelSecureTextEl, "Обмен ключами: ждём второе устройство");
   }
   if (channelSecureEl.hidden) {
     setHintOpen(false);
@@ -700,7 +704,7 @@ function render() {
   }
   const state = connectionState(active);
   channelConnEl.dataset.state = state;
-  channelConnEl.textContent = connectionText(state);
+  setText(channelConnEl, connectionText(state));
   // Над экраном «канал закрыт» пустая строка статуса дала бы лишний отступ
   channelBarEl.hidden = !active && !state;
 
@@ -719,10 +723,11 @@ function addMessage(message) {
   }
   // Строка ленты: время | содержимое и срок | действие (у файла кнопки внутри карточки)
   const item = el("li", "feed-item");
-  const time = el(
-    "time",
-    "feed-time",
-    new Date(message.created_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+  const time = el("time", "feed-time", () =>
+    new Date(message.created_at).toLocaleTimeString(currentLocale(), {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
   );
   time.dateTime = message.created_at;
   const body = el("div", "feed-body");
@@ -733,12 +738,12 @@ function addMessage(message) {
   // Файла нет в сообщении, когда его уже скачали и удалили с сервера
   const gone = !isText && !message.file;
   const placeholder = gone
-    ? el("pre", "feed-text gone", "Файл больше недоступен")
+    ? el("pre", "feed-text gone", msg("Файл больше недоступен"))
     : el("pre", "feed-text pending", "…");
   body.append(placeholder, left);
   let copy = null;
   if (isText) {
-    copy = el("button", "button", "Скопировать");
+    copy = el("button", "button", msg("Скопировать"));
     copy.type = "button";
     copy.hidden = true;
     item.append(copy);
@@ -781,7 +786,7 @@ async function reveal(entry) {
     const payload = fromBase64Url(message.payload);
     if (message.kind === "text") {
       entry.text = await openText(cipher.textKey, slug, payload);
-      entry.placeholder.textContent = entry.text;
+      setPlainText(entry.placeholder, entry.text);
       entry.placeholder.classList.remove("pending");
       entry.copy.hidden = false;
       return;
@@ -798,10 +803,12 @@ async function reveal(entry) {
       entry.card.markReceived(entry.receivedText);
     }
   } catch {
-    entry.placeholder.textContent =
+    setText(
+      entry.placeholder,
       message.kind === "text"
         ? "Не удалось расшифровать сообщение"
-        : "Не удалось расшифровать описание файла";
+        : "Не удалось расшифровать описание файла",
+    );
     entry.placeholder.classList.replace("pending", "undecryptable");
   }
 }
@@ -814,7 +821,7 @@ function updateLeft(entry) {
     return;
   }
   const rest = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-  entry.left.textContent = `исчезнет через ${rest}`;
+  setText(entry.left, "исчезнет через {rest}", { rest });
 }
 
 function tick() {
@@ -886,7 +893,7 @@ async function sealChannelFile(file) {
   const { slug, cipher } = channel;
   const { body, nonce } = await sealFile(cipher.fileKey, slug, file);
   const meta = await sealFileMeta(cipher.textKey, slug, {
-    name: file.name || "файл",
+    name: file.name || t("файл"),
     size: file.size,
     nonce,
   });
@@ -900,14 +907,14 @@ function flushUploads() {
       continue;
     }
     if (!wsOpen()) {
-      upload.status.textContent = "Ждёт связи…";
+      setText(upload.status, "Ждёт связи…");
       continue;
     }
     channel.ws.send(
       JSON.stringify({ type: "send_file", file_id: upload.id, payload: upload.sealed.payload }),
     );
     upload.sent = true;
-    upload.status.textContent = "Отправляется…";
+    setText(upload.status, "Отправляется…");
   }
 }
 
@@ -927,7 +934,7 @@ function failOldestSentUpload(reason) {
   if (upload) {
     upload.state = "error";
     upload.sent = false;
-    upload.status.textContent = reason;
+    setText(upload.status, reason);
   }
 }
 
@@ -938,7 +945,10 @@ function becomeSender() {
 }
 
 function updateChannelCounter() {
-  channelCounterEl.textContent = `${channelTextEl.value.length.toLocaleString("ru-RU")} / ${CHANNEL_MAX_LENGTH.toLocaleString("ru-RU")}`;
+  setText(channelCounterEl, "{count} / {max}", {
+    count: channelTextEl.value.length,
+    max: CHANNEL_MAX_LENGTH,
+  });
 }
 
 // Принимает и код, и вставленную целиком ссылку; регистр и пробелы прощаем

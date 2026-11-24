@@ -249,6 +249,32 @@ a:hover {
   margin-left: auto;
 }
 
+.lang-toggle {
+  flex: none;
+  align-self: center;
+  min-width: 32px;
+  height: 40px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.lang-toggle:hover {
+  color: var(--text);
+}
+
+/* Пока i18n.js не перевёл страницу, русский текст не показываем: иначе он мигнёт */
+html[lang="en"]:not([data-translated]) body {
+  visibility: hidden;
+}
+
 .theme-toggle {
   flex: none;
   align-self: center;

@@ -25,10 +25,20 @@ async def test_theme_is_set_before_styles(client):
     assert head.index('<script src="/static/prefs.js">') < head.index('href="/static/style.css"')
 
 
+async def test_translation_loads_before_code_that_uses_it(client):
+    html = (await client.get("/")).text
+    order = ["i18n-en.js", "i18n.js", "files.js", "channel.js", "app.js"]
+    positions = [html.index(f'<script src="/static/{name}">') for name in order]
+
+    assert positions == sorted(positions)
+
+
 @pytest.mark.parametrize(
     ("path", "content_type"),
     [
         ("/static/prefs.js", "javascript"),
+        ("/static/i18n.js", "javascript"),
+        ("/static/i18n-en.js", "javascript"),
         ("/static/app.js", "javascript"),
         ("/static/channel.js", "javascript"),
         ("/static/files.js", "javascript"),

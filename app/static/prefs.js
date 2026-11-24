@@ -1,8 +1,19 @@
-// Тема страницы. Файл грузится в <head> до стилей: тема должна стоять до первой отрисовки,
-// иначе страница мигнёт не тем цветом.
-// Пока пользователь не выбрал тему сам, она следует за системой
+// Тема и язык страницы. Файл грузится в <head> до стилей: оба должны стоять до первой
+// отрисовки, иначе страница мигнёт не тем цветом или не тем языком.
+// Пока пользователь не выбрал тему сам, она следует за системой. Язык без выбора — русский
 
 const THEME_KEY = "copypaste:theme";
+const LANGUAGE_KEY = "copypaste:lang";
+
+function savedLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ru";
+  } catch {
+    return "ru";
+  }
+}
+
+document.documentElement.lang = savedLanguage();
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 
 function savedTheme() {
