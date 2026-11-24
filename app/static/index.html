@@ -4,16 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CopyPaste</title>
+  <script src="/static/prefs.js"></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header class="header">
     <div class="header-inner">
-      <a class="logo" href="/">CopyPaste</a>
+      <a class="logo" href="/"><span class="logo-text">CopyPaste</span></a>
       <nav class="nav" aria-label="Разделы">
         <a id="nav-note" class="nav-item" href="/note">Заметка</a>
         <button id="nav-channel" class="nav-item" type="button">Канал</button>
       </nav>
+      <button id="lang-toggle" class="lang-toggle" type="button" translate="no" lang="en" aria-label="English">EN</button>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Тёмная тема" aria-pressed="false" title="Тёмная тема">
+        <svg class="theme-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <clipPath id="theme-sky"><rect width="24" height="19"></rect></clipPath>
+          <g clip-path="url(#theme-sky)">
+            <g class="theme-dial">
+              <circle cx="12" cy="10" r="3.5"></circle>
+              <path d="M12 4.5V3M12 15.5V17M6.5 10H5M17.5 10H19M15.9 6.1l1.05-1.05M8.1 6.1 7.05 5.05M15.9 13.9l1.05 1.05M8.1 13.9l-1.05 1.05"></path>
+              <path transform="rotate(180 12 19)" d="M10.93 4.1A6 6 0 1 0 17.9 11.07A5 5 0 0 1 10.93 4.1Z"></path>
+            </g>
+          </g>
+          <path d="M3 20.5h18"></path>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -423,6 +438,8 @@
     </div>
   </footer>
 
+  <script src="/static/i18n-en.js"></script>
+  <script src="/static/i18n.js"></script>
   <script src="/static/files.js"></script>
   <script src="/static/channel-crypto.js"></script>
   <script src="/static/channel-keystore.js"></script>

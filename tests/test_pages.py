@@ -17,9 +17,28 @@ async def test_page_returns_html(client, path):
     assert '<script src="/static/files.js">' in response.text
 
 
+async def test_theme_is_set_before_styles(client):
+    # Иначе страница сначала отрисуется в системной теме и мигнёт при переключении
+    html = (await client.get("/")).text
+    head = html[: html.index("</head>")]
+
+    assert head.index('<script src="/static/prefs.js">') < head.index('href="/static/style.css"')
+
+
+async def test_translation_loads_before_code_that_uses_it(client):
+    html = (await client.get("/")).text
+    order = ["i18n-en.js", "i18n.js", "files.js", "channel.js", "app.js"]
+    positions = [html.index(f'<script src="/static/{name}">') for name in order]
+
+    assert positions == sorted(positions)
+
+
 @pytest.mark.parametrize(
     ("path", "content_type"),
     [
+        ("/static/prefs.js", "javascript"),
+        ("/static/i18n.js", "javascript"),
+        ("/static/i18n-en.js", "javascript"),
         ("/static/app.js", "javascript"),
         ("/static/channel.js", "javascript"),
         ("/static/files.js", "javascript"),

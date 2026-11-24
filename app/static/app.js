@@ -68,23 +68,24 @@ function noteUrl(slug) {
   return `${location.origin}/n/${encodeURIComponent(slug)}`;
 }
 
+// message — русский исходник или msg(): строка перерисуется при смене языка
 function showStatus(message, kind = "success") {
   clearTimeout(statusTimer);
-  statusEl.textContent = message;
+  setText(statusEl, message);
   statusEl.className = `status ${kind}`;
   if (kind === "success") {
     statusTimer = setTimeout(() => {
-      statusEl.textContent = "";
+      setText(statusEl, "");
     }, 3000);
   }
 }
 
 function updateCounter() {
-  counterEl.textContent = `${textEl.value.length.toLocaleString("ru-RU")} / ${MAX_LENGTH.toLocaleString("ru-RU")}`;
+  setText(counterEl, "{count} / {max}", { count: textEl.value.length, max: MAX_LENGTH });
 }
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleString("ru-RU", {
+  return new Date(iso).toLocaleString(currentLocale(), {
     day: "numeric",
     month: "long",
     hour: "2-digit",
@@ -94,15 +95,15 @@ function formatDate(iso) {
 
 function setTitle(slug) {
   if (!slug) {
-    noteTitleEl.textContent = "Новая заметка";
+    setText(noteTitleEl, "Новая заметка");
     return;
   }
-  const code = el("span", "editor-slug", slug);
-  noteTitleEl.replaceChildren("Заметка ", code);
+  setPlainText(noteTitleEl, "");
+  noteTitleEl.append(el("span", null, msg("Заметка")), " ", el("span", "editor-slug", slug));
 }
 
 function showShareStatus(message, kind = "success") {
-  shareStatusEl.textContent = message;
+  setText(shareStatusEl, message);
   shareStatusEl.className = `share-status ${kind}`;
 }
 
@@ -125,18 +126,22 @@ function setNote(note) {
   showSharePanel(currentSlug);
 
   if (!note) {
-    infoEl.textContent = "";
+    setText(infoEl, "");
     return;
   }
   const parts = [];
   if (note.has_password) {
-    parts.push("Защищена паролем");
+    parts.push(msg("Защищена паролем"));
   }
   if (note.burn_after_read) {
-    parts.push("Удалится после прочтения");
+    parts.push(msg("Удалится после прочтения"));
   }
-  parts.push(note.expires_at ? `Хранится до ${formatDate(note.expires_at)}` : "Хранится бессрочно");
-  infoEl.textContent = parts.join(" · ");
+  parts.push(
+    note.expires_at
+      ? msg("Хранится до {date}", { date: () => formatDate(note.expires_at) })
+      : msg("Хранится бессрочно"),
+  );
+  setText(infoEl, () => parts.map((part) => part()).join(" · "));
 }
 
 function showScreen(name) {
@@ -154,21 +159,25 @@ function passwordLength(value) {
 function resetPasswordField() {
   passwordEl.value = "";
   passwordEl.type = "password";
-  passwordToggleBtn.textContent = "Показать";
+  setText(passwordToggleBtn, "Показать");
   passwordHintEl.hidden = true;
   updateOptionsSummary();
 }
 
 // На телефоне параметры свёрнуты в строку: по ней видно, что выбрано, не раскрывая
 function updateOptionsSummary() {
-  const parts = [expiryEl.querySelector("input:checked").nextElementSibling.textContent];
-  if (burnEl.checked) {
-    parts.push("одноразовая");
-  }
-  if (passwordEl.value) {
-    parts.push("с паролем");
-  }
-  optionsSummaryEl.textContent = parts.join(" · ");
+  const burn = burnEl.checked;
+  const password = Boolean(passwordEl.value);
+  setText(optionsSummaryEl, () => {
+    const parts = [expiryEl.querySelector("input:checked").nextElementSibling.textContent];
+    if (burn) {
+      parts.push(t("одноразовая"));
+    }
+    if (password) {
+      parts.push(t("с паролем"));
+    }
+    return parts.join(" · ");
+  });
 }
 
 function setOptionsExpanded(expanded) {
@@ -179,16 +188,16 @@ function setOptionsExpanded(expanded) {
 function togglePasswordVisibility() {
   const show = passwordEl.type === "password";
   passwordEl.type = show ? "text" : "password";
-  passwordToggleBtn.textContent = show ? "Скрыть" : "Показать";
+  setText(passwordToggleBtn, show ? "Скрыть" : "Показать");
 }
 
 function updateSaveButton() {
   const uploading = attachments.some((upload) => upload.state === "uploading");
   saveBtn.disabled = saving || uploading;
   if (saving) {
-    saveBtn.textContent = "Сохраняю…";
+    setText(saveBtn, "Сохраняю…");
   } else {
-    saveBtn.textContent = uploading ? "Загружаются файлы…" : "Сохранить";
+    setText(saveBtn, uploading ? "Загружаются файлы…" : "Сохранить");
   }
 }
 
@@ -198,19 +207,24 @@ function setBusy(busy) {
 }
 
 function updateFilesCount() {
-  filesCountEl.textContent = attachments.length
-    ? `${attachments.length} из ${MAX_NOTE_FILES}`
-    : "";
+  if (attachments.length) {
+    setText(filesCountEl, "{count} из {max}", { count: attachments.length, max: MAX_NOTE_FILES });
+  } else {
+    setText(filesCountEl, "");
+  }
 }
 
 function addAttachments(files) {
   const room = MAX_NOTE_FILES - attachments.length;
   if (room <= 0) {
-    showStatus(`В заметке не больше ${MAX_NOTE_FILES} файлов`, "error");
+    showStatus(msg("В заметке не больше {max} файлов", { max: MAX_NOTE_FILES }), "error");
     return;
   }
   if (files.length > room) {
-    showStatus(`Добавлены первые ${room}: в заметке не больше ${MAX_NOTE_FILES} файлов`, "error");
+    showStatus(
+      msg("Добавлены первые {room}: в заметке не больше {max} файлов", { room, max: MAX_NOTE_FILES }),
+      "error",
+    );
   }
   for (const file of files.slice(0, room)) {
     const upload = startUpload(file, {
@@ -255,31 +269,32 @@ function renderNoteFiles(files, hint = "") {
     }),
   );
   noteFilesEl.hidden = files.length === 0;
-  noteFilesHintEl.textContent = hint;
+  setText(noteFilesHintEl, hint);
   noteFilesHintEl.hidden = !hint || files.length === 0;
 }
 
+// Ответ сервера с ошибкой → текст для строки статуса (msg)
 async function errorMessage(response) {
   if (response.status === 404) {
-    return "Заметка не найдена или срок её жизни истёк";
+    return msg("Заметка не найдена или срок её жизни истёк");
   }
   if (response.status === 422) {
     try {
       const body = await response.json();
       if (typeof body.detail === "string") {
         // Файл привязать не удалось: загружен слишком давно или уже в другой заметке
-        return "Часть файлов устарела. Уберите их и загрузите заново";
+        return msg("Часть файлов устарела. Уберите их и загрузите заново");
       }
-      const msg = body.detail?.[0]?.msg;
-      if (msg) {
-        return `Некорректные данные: ${msg}`;
+      const detail = body.detail?.[0]?.msg;
+      if (detail) {
+        return msg("Некорректные данные: {detail}", { detail });
       }
     } catch {
       // тело не JSON — покажем общее сообщение
     }
-    return "Некорректные данные";
+    return msg("Некорректные данные");
   }
-  return `Ошибка сервера (${response.status})`;
+  return msg("Ошибка сервера ({status})", { status: String(response.status) });
 }
 
 function burnFilesText(count) {
@@ -287,15 +302,17 @@ function burnFilesText(count) {
     return "";
   }
   if (count === 1) {
-    return "В заметке 1 файл. После открытия его можно скачать один раз в течение 10 минут.";
+    return msg("В заметке 1 файл. После открытия его можно скачать один раз в течение 10 минут.");
   }
-  return `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}. ` +
-    "После открытия каждый можно скачать один раз в течение 10 минут.";
+  return msg(
+    "В заметке {count} {count:файл|файла|файлов}. После открытия каждый можно скачать один раз в течение 10 минут.",
+    { count },
+  );
 }
 
 // warn — заморозка: пароль тут ни при чём, поэтому без красной рамки у поля
 function showUnlockError(message, kind = "error") {
-  unlockErrorEl.textContent = message;
+  setText(unlockErrorEl, message);
   unlockErrorEl.className = `unlock-error ${kind}`;
   unlockErrorEl.hidden = !message;
   if (message && kind === "error") {
@@ -309,7 +326,7 @@ function stopUnlockCountdown() {
   clearInterval(unlockTimer);
   unlockTimer = null;
   unlockSubmitBtn.disabled = false;
-  unlockSubmitBtn.textContent = "Открыть";
+  setText(unlockSubmitBtn, "Открыть");
   unlockPasswordEl.disabled = false;
 }
 
@@ -325,7 +342,7 @@ function startUnlockCountdown(seconds) {
       return;
     }
     const wait = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-    unlockSubmitBtn.textContent = `Открыть через ${wait}`;
+    setText(unlockSubmitBtn, "Открыть через {wait}", { wait });
   };
   unlockSubmitBtn.disabled = true;
   unlockPasswordEl.value = "";
@@ -337,17 +354,19 @@ function startUnlockCountdown(seconds) {
 
 function showUnlock(note) {
   const count = note.files.length;
-  let info = "";
+  const parts = [];
   if (note.burn_after_read) {
-    info = "Заметку можно открыть только один раз, потом она удалится. " + burnFilesText(count);
+    parts.push(msg("Заметку можно открыть только один раз, потом она удалится."));
+    if (count) {
+      parts.push(burnFilesText(count));
+    }
   } else if (count === 1) {
-    info = "В заметке 1 файл. Он откроется вместе с текстом.";
+    parts.push(msg("В заметке 1 файл. Он откроется вместе с текстом."));
   } else if (count) {
-    info = `В заметке ${count} ${plural(count, "файл", "файла", "файлов")}. ` +
-      "Они откроются вместе с текстом.";
+    parts.push(msg("В заметке {count} {count:файл|файла|файлов}. Они откроются вместе с текстом.", { count }));
   }
-  unlockInfoEl.textContent = info.trim();
-  unlockInfoEl.hidden = !info;
+  setText(unlockInfoEl, () => parts.map((part) => part()).join(" "));
+  unlockInfoEl.hidden = parts.length === 0;
   unlockPasswordEl.value = "";
   showUnlockError("");
   showScreen("unlock");
@@ -360,20 +379,27 @@ async function unlockFailure(response) {
       const body = await response.json().catch(() => null);
       const left = body?.detail?.attempts_left;
       if (typeof left !== "number") {
-        return "Неверный пароль";
+        return msg("Неверный пароль");
       }
       if (left === 0) {
-        return "Неверный пароль. Попытки закончились, попробуйте позже";
+        return msg("Неверный пароль. Попытки закончились, попробуйте позже");
       }
-      return `Неверный пароль. Осталось ${left} ${plural(left, "попытка", "попытки", "попыток")}`;
+      return msg("Неверный пароль. Осталось {left} {left:попытка|попытки|попыток}", { left });
     }
     case 422:
-      return `Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`;
+      return passwordLengthText();
     case 503:
-      return "Проверка пароля временно недоступна. Попробуйте через минуту";
+      return msg("Проверка пароля временно недоступна. Попробуйте через минуту");
     default:
-      return `Ошибка сервера (${response.status})`;
+      return msg("Ошибка сервера ({status})", { status: String(response.status) });
   }
+}
+
+function passwordLengthText() {
+  return msg("Пароль: от {min} до {max} символов", {
+    min: PASSWORD_MIN_LENGTH,
+    max: PASSWORD_MAX_LENGTH,
+  });
 }
 
 async function unlockNote(event) {
@@ -385,12 +411,12 @@ async function unlockNote(event) {
   }
   const length = passwordLength(password);
   if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
-    showUnlockError(`Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`);
+    showUnlockError(passwordLengthText());
     return;
   }
 
   unlockSubmitBtn.disabled = true;
-  unlockSubmitBtn.textContent = "Проверяю…";
+  setText(unlockSubmitBtn, "Проверяю…");
   showUnlockError("");
   try {
     const response = await fetch(`${API_URL}/${encodeURIComponent(slug)}/unlock`, {
@@ -432,7 +458,7 @@ async function unlockNote(event) {
   } finally {
     // Во время заморозки кнопкой управляет отсчёт
     if (!unlockTimer) {
-      unlockSubmitBtn.textContent = "Открыть";
+      setText(unlockSubmitBtn, "Открыть");
       unlockSubmitBtn.disabled = false;
     }
   }
@@ -445,7 +471,7 @@ async function loadNote(slug) {
   showScreen("editor");
   textEl.value = "";
   updateCounter();
-  statusEl.textContent = "";
+  setText(statusEl, "");
   clearAttachments();
   clearNoteFiles();
 
@@ -469,7 +495,7 @@ async function loadNote(slug) {
     }
     if (note.burn_after_read) {
       pendingSlug = slug;
-      burnFilesEl.textContent = burnFilesText(note.files.length);
+      setText(burnFilesEl, burnFilesText(note.files.length));
       burnFilesEl.hidden = note.files.length === 0;
       showScreen("burn");
       return;
@@ -486,8 +512,8 @@ function showNote(note) {
   if (note.burn_after_read) {
     // Заметки на сервере больше нет — делиться нечем
     setNote(null);
-    noteTitleEl.textContent = "Заметка";
-    infoEl.textContent = "Заметка удалена с сервера. Это был единственный просмотр";
+    setText(noteTitleEl, "Заметка");
+    setText(infoEl, "Заметка удалена с сервера. Это был единственный просмотр");
     renderNoteFiles(
       note.files,
       "Каждый файл можно скачать один раз в течение 10 минут.",
@@ -549,7 +575,7 @@ async function saveNote() {
   if (password) {
     const length = passwordLength(password);
     if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
-      showStatus(`Пароль: от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов`, "error");
+      showStatus(passwordLengthText(), "error");
       // В свёрнутых параметрах поле не видно — фокус ушёл бы в никуда
       setOptionsExpanded(true);
       passwordEl.focus();
@@ -578,7 +604,7 @@ async function saveNote() {
       note.files,
       note.has_password ? "Скачать файлы можно будет после ввода пароля." : "",
     );
-    statusEl.textContent = "";
+    setText(statusEl, "");
     try {
       await copyToClipboard(noteUrl(note.slug));
       showShareStatus("Сохранено, ссылка скопирована");
@@ -653,7 +679,7 @@ function showView(name) {
 }
 
 function route() {
-  statusEl.textContent = "";
+  setText(statusEl, "");
   const channelSlug = channelSlugFromPath();
   if (channelSlug) {
     showView("channel");

@@ -8,15 +8,18 @@ const CONFIRM_TIMEOUT_MS = 10000;
 // Столько ждём следующей порции данных, прежде чем считать соединение зависшим
 const STALL_TIMEOUT_MS = 15000;
 
-class FileGoneError extends Error {}
-class FileDamagedError extends Error {}
+class FileGoneError extends UiError {}
+class FileDamagedError extends UiError {}
 
+// text — готовый текст (имя файла) или msg(): тогда он переведётся при смене языка
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) {
     node.className = className;
   }
-  if (text !== undefined) {
+  if (typeof text === "function") {
+    setText(node, text);
+  } else if (text !== undefined) {
     node.textContent = text;
   }
   return node;
@@ -24,7 +27,7 @@ function el(tag, className, text) {
 
 function formatSize(bytes) {
   if (bytes < 1024) {
-    return `${bytes} Б`;
+    return t("{bytes} Б", { bytes });
   }
   const units = ["КБ", "МБ", "ГБ"];
   let value = bytes / 1024;
@@ -34,28 +37,20 @@ function formatSize(bytes) {
     unit += 1;
   }
   const digits = value < 10 ? 1 : 0;
-  return `${value.toLocaleString("ru-RU", { maximumFractionDigits: digits })} ${units[unit]}`;
+  return `${value.toLocaleString(currentLocale(), { maximumFractionDigits: digits })} ${t(units[unit])}`;
 }
 
-function plural(count, one, few, many) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) {
-    return one;
-  }
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-    return few;
-  }
-  return many;
+function tooLargeText() {
+  return msg("Больше {size}", { size: () => formatSize(MAX_FILE_SIZE) });
 }
 
 // Проверяем до загрузки, чтобы не гонять по сети то, что сервер всё равно отклонит
 function fileProblem(file) {
   if (file.size === 0) {
-    return "Пустой файл";
+    return msg("Пустой файл");
   }
   if (file.size > MAX_FILE_SIZE) {
-    return `Больше ${formatSize(MAX_FILE_SIZE)}`;
+    return tooLargeText();
   }
   return null;
 }
@@ -63,21 +58,27 @@ function fileProblem(file) {
 function uploadErrorText(status) {
   switch (status) {
     case 400:
-      return "Пустой файл";
+      return msg("Пустой файл");
     case 401:
     case 404:
-      return "Канал недоступен";
+      return msg("Канал недоступен");
     case 403:
-      return "Загружать может только отправитель";
+      return msg("Загружать может только отправитель");
     case 413:
-      return `Больше ${formatSize(MAX_FILE_SIZE)}`;
+      return tooLargeText();
     case 429:
-      return "Слишком много загрузок. Подождите минуту";
+      return msg("Слишком много загрузок. Подождите минуту");
     case 507:
-      return "Хранилище переполнено";
+      return msg("Хранилище переполнено");
     default:
-      return `Ошибка сервера (${status})`;
+      return msg("Ошибка сервера ({status})", { status: String(status) });
   }
+}
+
+function uploadError(render) {
+  const error = new Error(render());
+  error.render = render;
+  return error;
 }
 
 // XMLHttpRequest, а не fetch: прогресс отправки есть только у него.
@@ -98,11 +99,11 @@ function uploadFile(url, body, { name, headers = {}, onProgress } = {}) {
       if (xhr.status === 201) {
         resolve(JSON.parse(xhr.responseText));
       } else {
-        reject(new Error(uploadErrorText(xhr.status)));
+        reject(uploadError(uploadErrorText(xhr.status)));
       }
     });
-    xhr.addEventListener("error", () => reject(new Error("Нет связи с сервером")));
-    xhr.addEventListener("abort", () => reject(new Error("Загрузка отменена")));
+    xhr.addEventListener("error", () => reject(new UiError("Нет связи с сервером")));
+    xhr.addEventListener("abort", () => reject(new UiError("Загрузка отменена")));
     xhr.send(body);
   });
   return { promise, abort: () => xhr.abort() };
@@ -135,15 +136,15 @@ function startUpload(
   const item = el("li", "upload-item");
   const status = el("span", "file-status");
   const progress = createProgress();
-  const retry = el("button", "button small", "Повторить");
+  const retry = el("button", "button small", msg("Повторить"));
   retry.type = "button";
   retry.hidden = true;
   const remove = el("button", "icon-button", "×");
   remove.type = "button";
-  remove.setAttribute("aria-label", "Убрать файл");
+  setAttr(remove, "aria-label", "Убрать файл");
   item.append(
-    el("span", "file-name", file.name || "файл"),
-    el("span", "file-size", formatSize(file.size)),
+    el("span", "file-name", file.name || msg("файл")),
+    el("span", "file-size", () => formatSize(file.size)),
     status,
     retry,
     remove,
@@ -164,14 +165,14 @@ function startUpload(
   function fail(message, canRetry) {
     upload.state = "error";
     progress.hide();
-    status.textContent = message;
+    setText(status, message);
     retry.hidden = !canRetry;
     onChange?.(upload);
   }
 
   async function run() {
     upload.state = "uploading";
-    status.textContent = "";
+    setText(status, "");
     retry.hidden = true;
     progress.set(0);
     onChange?.(upload);
@@ -180,7 +181,7 @@ function startUpload(
     if (encrypt) {
       // Шифруем один раз: повтор загрузки отправит тот же шифротекст с тем же описанием
       if (!upload.sealed) {
-        status.textContent = "Шифруется…";
+        setText(status, "Шифруется…");
         try {
           upload.sealed = await encrypt(file);
         } catch {
@@ -192,7 +193,7 @@ function startUpload(
         if (upload.state === "removed") {
           return;
         }
-        status.textContent = "";
+        setText(status, "");
       }
       body = upload.sealed.body;
       name = undefined;
@@ -210,13 +211,13 @@ function startUpload(
         upload.id = result.id;
         upload.state = "done";
         progress.hide();
-        status.textContent = "Загружен";
+        setText(status, "Загружен");
         onChange?.(upload);
         onDone?.(upload);
       },
       (error) => {
         if (upload.state !== "removed") {
-          fail(error.message, true);
+          fail(error.render, true);
         }
       },
     );
@@ -363,7 +364,7 @@ class OneTimeDownload {
         throw new FileGoneError("Файл больше недоступен");
       }
       if (!response.ok) {
-        throw new Error(`Ошибка сервера (${response.status})`);
+        throw new Error(`server error ${response.status}`);
       }
       if (response.status === 200 && this.received) {
         // Сервер прислал файл с начала — начинаем заново
@@ -385,7 +386,7 @@ class OneTimeDownload {
       clearTimeout(watchdog);
     }
     if (this.received < this.size) {
-      throw new Error("Связь оборвалась");
+      throw new Error("connection lost");
     }
   }
 }
@@ -402,26 +403,31 @@ function createFileCard(file, { status = "", onReceived, decrypt } = {}) {
     preview.loading = "lazy";
     card.append(preview);
   }
-  const statusEl = el("span", "file-status", status);
+  const statusEl = el("span", "file-status");
+  setText(statusEl, status);
   const info = el("div", "file-info");
-  info.append(el("span", "file-name", file.name), el("span", "file-size", formatSize(file.size)), statusEl);
+  info.append(
+    el("span", "file-name", file.name),
+    el("span", "file-size", () => formatSize(file.size)),
+    statusEl,
+  );
   const actions = el("div", "file-actions");
   const progress = createProgress();
   card.append(info, actions, progress.el);
 
   if (file.received_url) {
-    const button = el("button", "button", "Скачать");
+    const button = el("button", "button", msg("Скачать"));
     button.type = "button";
     const download = new OneTimeDownload(file, (part) => progress.set(part), decrypt);
     button.addEventListener("click", async () => {
       button.disabled = true;
       card.classList.remove("interrupted");
-      statusEl.textContent = "Скачивается…";
+      setText(statusEl, "Скачивается…");
       try {
         await download.run();
         actions.replaceChildren();
         progress.hide();
-        statusEl.textContent = "Скачано";
+        setText(statusEl, "Скачано");
         card.classList.add("received");
         onReceived?.();
       } catch (error) {
@@ -429,24 +435,24 @@ function createFileCard(file, { status = "", onReceived, decrypt } = {}) {
         if (error instanceof FileGoneError) {
           actions.replaceChildren();
           progress.hide();
-          statusEl.textContent = error.message;
+          setText(statusEl, error.render);
           return;
         }
         if (error instanceof FileDamagedError) {
           progress.hide();
-          button.textContent = "Скачать заново";
-          statusEl.textContent = error.message;
+          setText(button, "Скачать заново");
+          setText(statusEl, error.render);
           card.classList.add("interrupted");
           return;
         }
-        button.textContent = "Продолжить";
-        statusEl.textContent = "Связь оборвалась. Можно продолжить с того же места";
+        setText(button, "Продолжить");
+        setText(statusEl, "Связь оборвалась. Можно продолжить с того же места");
         card.classList.add("interrupted");
       }
     });
     actions.append(button);
   } else if (file.download_url) {
-    const link = el("a", "button", "Скачать");
+    const link = el("a", "button", msg("Скачать"));
     link.href = file.download_url;
     link.download = file.name;
     actions.append(link);
@@ -457,7 +463,7 @@ function createFileCard(file, { status = "", onReceived, decrypt } = {}) {
     markReceived(text) {
       actions.replaceChildren();
       progress.hide();
-      statusEl.textContent = text;
+      setText(statusEl, text);
       card.classList.add("received");
     },
   };
