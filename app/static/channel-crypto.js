@@ -7,6 +7,11 @@ const DEVICE_KEY_ALGORITHM = { name: "ECDH", namedCurve: "P-256" };
 const SHAPE_COUNT = 4;
 const SHAPE_BITS = 5;
 const MESSAGE_NONCE_BYTES = 12;
+// Как CHANNEL_FILE_CHUNK_BYTES на сервере: по нему считается предел размера загрузки
+const FILE_CHUNK_BYTES = 64 * 1024;
+const FILE_TAG_BYTES = 16;
+const FILE_NONCE_BYTES = 8;
+const FILE_NAME_MAX_LENGTH = 255;
 
 const textEncoder = new TextEncoder();
 
@@ -141,6 +146,75 @@ async function openText(key, slug, payload) {
   return new TextDecoder("utf-8", { fatal: true }).decode(plain);
 }
 
+function uint32(value) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value);
+  return bytes;
+}
+
+// Как у файлов заметок с паролем (app/utils/crypto.py): nonce куска — 8 случайных байт файла и
+// номер куска, в AAD ещё признак последнего. Куски не переставить, не перенести в другой файл и
+// не отрезать: файл, обрезанный ровно по границе куска, не сойдётся по тегу
+function chunkParams(slug, fileNonce, index, last) {
+  return {
+    name: "AES-GCM",
+    iv: concatBytes(fileNonce, uint32(index)),
+    additionalData: concatBytes(
+      textEncoder.encode(`${CHANNEL_CRYPTO_LABEL}/file-chunk/${slug}/`),
+      fileNonce,
+      uint32(index),
+      Uint8Array.of(last ? 1 : 0),
+    ),
+  };
+}
+
+async function sealFile(key, slug, file) {
+  const nonce = crypto.getRandomValues(new Uint8Array(FILE_NONCE_BYTES));
+  const count = Math.max(1, Math.ceil(file.size / FILE_CHUNK_BYTES));
+  const parts = [];
+  for (let index = 0; index < count; index += 1) {
+    const start = index * FILE_CHUNK_BYTES;
+    const plain = await file.slice(start, start + FILE_CHUNK_BYTES).arrayBuffer();
+    const params = chunkParams(slug, nonce, index, index === count - 1);
+    parts.push(new Uint8Array(await crypto.subtle.encrypt(params, key, plain)));
+  }
+  return { body: new Blob(parts), nonce };
+}
+
+async function openFile(key, slug, nonce, sealed) {
+  const stored = FILE_CHUNK_BYTES + FILE_TAG_BYTES;
+  const count = Math.ceil(sealed.size / stored);
+  if (count === 0) {
+    throw new Error("Empty file");
+  }
+  const parts = [];
+  for (let index = 0; index < count; index += 1) {
+    const chunk = await sealed.slice(index * stored, (index + 1) * stored).arrayBuffer();
+    const params = chunkParams(slug, nonce, index, index === count - 1);
+    parts.push(new Uint8Array(await crypto.subtle.decrypt(params, key, chunk)));
+  }
+  return new Blob(parts);
+}
+
+// Описание файла — сообщение вида "file": имя, размер и nonce. Сервер видит только длину
+function sealFileMeta(key, slug, { name, size, nonce }) {
+  const meta = { name: name.slice(0, FILE_NAME_MAX_LENGTH) || "файл", size, nonce: toBase64Url(nonce) };
+  return sealMessage(key, "file", slug, textEncoder.encode(JSON.stringify(meta)));
+}
+
+async function openFileMeta(key, slug, payload) {
+  const plain = await openMessage(key, "file", slug, payload);
+  const meta = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(plain));
+  if (
+    typeof meta?.name !== "string" ||
+    !Number.isSafeInteger(meta.size) ||
+    typeof meta.nonce !== "string"
+  ) {
+    throw new Error("Bad file description");
+  }
+  return { name: meta.name, size: meta.size, nonce: fromBase64Url(meta.nonce) };
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     cryptoAvailable,
@@ -155,5 +229,9 @@ if (typeof module !== "undefined") {
     openMessage,
     sealText,
     openText,
+    sealFile,
+    openFile,
+    sealFileMeta,
+    openFileMeta,
   };
 }

@@ -221,7 +221,7 @@ async def test_send_file_before_keys_exchanged_not_allowed(db, joiner):
     )
 
     with pytest.raises(channels_service.KeysNotReadyError):
-        await channels_service.add_file_message(db, joiner, stored.public_id)
+        await channels_service.add_file_message(db, joiner, stored.public_id, fake_payload("meta"))
 
     await db.refresh(stored)
     assert stored.message_id is None

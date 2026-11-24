@@ -1,3 +1,4 @@
+import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Annotated
@@ -13,6 +14,7 @@ from app.api.client import client_ip
 from app.db.connection import run_db
 from app.db.models.file import FileOrigin
 from app.realtime.manager import ChannelManager
+from app.schemas.channel import CHANNEL_FILE_CHUNK_BYTES, MESSAGE_TAG_BYTES
 from app.schemas.channel_events import FileDownloadedEvent
 from app.schemas.file import FileRead
 from app.security.file_keys import FileKeys, FileKeysUnavailableError
@@ -23,6 +25,7 @@ from app.storage.base import FileStorage, FileTooLargeError, new_storage_key
 from app.storage.encrypted import encrypted_download
 from app.utils import crypto, signing
 from app.utils.file_types import (
+    OCTET_STREAM,
     SNIFF_BYTES,
     clean_filename,
     content_disposition,
@@ -69,6 +72,14 @@ def _gone() -> HTTPException:
     return HTTPException(status.HTTP_410_GONE, detail="File is no longer available")
 
 
+def max_upload_bytes(origin: FileOrigin) -> int:
+    if origin == FileOrigin.NOTE:
+        return settings.FILE_MAX_SIZE_BYTES
+    # Файл канала зашифрован в браузере кусками, к каждому добавлен тег
+    chunks = math.ceil(settings.FILE_MAX_SIZE_BYTES / CHANNEL_FILE_CHUNK_BYTES)
+    return settings.FILE_MAX_SIZE_BYTES + chunks * MESSAGE_TAG_BYTES
+
+
 async def receive_upload(
     request: Request, name: str, *, origin: FileOrigin, uploaded_by_id: int | None = None
 ) -> FileRead:
@@ -80,10 +91,11 @@ async def receive_upload(
     if not await limiter.allow(client_ip(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
 
+    max_size = max_upload_bytes(origin)
     # Content-Length проверяем до чтения, но не полагаемся на него: его может не быть
     header = request.headers.get("content-length")
     declared_size = int(header) if header is not None else None
-    if declared_size is not None and declared_size > settings.FILE_MAX_SIZE_BYTES:
+    if declared_size is not None and declared_size > max_size:
         raise _too_large()
     if declared_size == 0:
         raise _empty()
@@ -104,7 +116,7 @@ async def receive_upload(
 
     key = new_storage_key()
     try:
-        size = await storage.save(key, chunks(), settings.FILE_MAX_SIZE_BYTES)
+        size = await storage.save(key, chunks(), max_size)
     except FileTooLargeError:
         raise _too_large() from None
     except ClientDisconnect:
@@ -115,7 +127,10 @@ async def receive_upload(
             db,
             storage_key=key,
             name=clean_filename(name),
-            content_type=detect_content_type(bytes(head)),
+            # Файл канала — шифротекст: по первым байтам тип не узнать, превью у него нет
+            content_type=(
+                detect_content_type(bytes(head)) if origin == FileOrigin.NOTE else OCTET_STREAM
+            ),
             size_bytes=size,
             origin=origin,
             uploaded_by_id=uploaded_by_id,

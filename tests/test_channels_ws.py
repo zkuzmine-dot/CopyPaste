@@ -581,7 +581,13 @@ async def test_send_file_before_keys_is_error(client, pending, factory):
 
     async with connect(client, pending["slug"]) as ws:
         await auth(ws, pending["joiner"])
-        await ws.send_json({"type": "send_file", "file_id": stored.public_id})
+        await ws.send_json(
+            {
+                "type": "send_file",
+                "file_id": stored.public_id,
+                "payload": fake_payload_b64("meta"),
+            }
+        )
         error = await receive(ws)
 
     assert error["code"] == "keys_not_ready"

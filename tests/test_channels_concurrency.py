@@ -262,7 +262,9 @@ async def test_send_file_during_role_swap_is_rejected(factory, monkeypatch):
             await swap_holds_lock.wait()
             try:
                 async with db.begin():
-                    await channels_service.add_file_message(db, old_sender, file_id)
+                    await channels_service.add_file_message(
+                        db, old_sender, file_id, fake_payload("meta")
+                    )
                 result.append("sent")
             except channels_service.ActionNotAllowedError:
                 result.append("rejected")

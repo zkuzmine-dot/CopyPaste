@@ -64,10 +64,6 @@ class Message(Base):
     __table_args__ = (
         Index("ix_messages_channel_id_created_at", "channel_id", "created_at"),
         CheckConstraint("kind IN ('text', 'file')", name="ck_messages_kind"),
-        # Текст есть ровно у текстовых сообщений; файл лежит в stored_files.message_id
-        CheckConstraint(
-            "(kind = 'text') = (payload IS NOT NULL)", name="ck_messages_payload_matches_kind"
-        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -76,7 +72,8 @@ class Message(Base):
     kind: Mapped[str] = mapped_column(
         String(8), default=MessageKind.TEXT, server_default=MessageKind.TEXT.value
     )
-    # Текст, зашифрованный в браузере: nonce, шифротекст и тег. Ключа у сервера нет
-    payload: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Зашифрованный в браузере текст или описание файла: nonce, шифротекст и тег. Ключа у
+    # сервера нет. Байты самого файла — в stored_files с этим message_id
+    payload: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

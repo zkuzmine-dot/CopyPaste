@@ -157,10 +157,10 @@ class FileMessageEvents:
 
 
 async def _add_file_message(
-    db: AsyncSession, participant_id: int, file_id: str
+    db: AsyncSession, participant_id: int, file_id: str, payload: bytes
 ) -> FileMessageEvents:
     participant = await _get_participant(db, participant_id)
-    message, stored = await channels_service.add_file_message(db, participant, file_id)
+    message, stored = await channels_service.add_file_message(db, participant, file_id, payload)
     return FileMessageEvents(
         for_uploader=MessageEvent(**message_read(message, stored, with_links=False).model_dump()),
         for_others=MessageEvent(**message_read(message, stored, with_links=True).model_dump()),
@@ -272,9 +272,11 @@ async def _handle_event(
                 await connection.send(KEYS_NOT_READY)
                 return
             await manager.broadcast(slug, message)
-        case SendFileEvent(file_id=file_id):
+        case SendFileEvent(file_id=file_id, payload=payload):
             try:
-                events = await run_db(factory, lambda db: _add_file_message(db, me, file_id))
+                events = await run_db(
+                    factory, lambda db: _add_file_message(db, me, file_id, payload)
+                )
             except channels_service.ActionNotAllowedError:
                 error = ErrorEvent(code="not_sender", detail="Only the sender can send files")
                 await connection.send(error)

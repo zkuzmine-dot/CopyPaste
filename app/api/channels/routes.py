@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
@@ -19,6 +19,8 @@ from app.utils.qr import make_qr_svg
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 ParticipantToken = Annotated[str | None, Header(alias="X-Participant-Token")]
+# Настоящее имя файла канала знают только устройства: оно в зашифрованном описании
+CHANNEL_FILE_NAME = "file"
 
 
 async def _active_channel(db: AsyncSession, slug: str) -> Channel:
@@ -122,16 +124,16 @@ async def _sender_id(db: AsyncSession, slug: str, token: str | None) -> int:
         507: {"description": "Storage is full"},
     },
     openapi_extra=RAW_FILE_BODY,
-    description="Загрузка файла в канал. В ленту он попадёт событием send_file по WebSocket.",
+    description="Загрузка в канал файла, зашифрованного в браузере. Имя и тип зашифрованы в "
+    "описании, которое уходит вместе с id файла в событии send_file по WebSocket.",
 )
 async def upload_channel_file(
-    slug: str,
-    request: Request,
-    name: Annotated[str, Query(min_length=1, max_length=1024)],
-    token: ParticipantToken = None,
+    slug: str, request: Request, token: ParticipantToken = None
 ) -> FileRead:
     # Проверяем до чтения тела: не отправителю незачем принимать мегабайты.
     # Окончательная проверка роли — в send_file, под блокировкой канала
     factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
     sender_id = await run_db(factory, lambda db: _sender_id(db, slug, token))
-    return await receive_upload(request, name, origin=FileOrigin.CHANNEL, uploaded_by_id=sender_id)
+    return await receive_upload(
+        request, CHANNEL_FILE_NAME, origin=FileOrigin.CHANNEL, uploaded_by_id=sender_id
+    )

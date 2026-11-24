@@ -364,7 +364,10 @@ function handleEvent(event) {
       break;
     case "file_downloaded": {
       const entry = channel.messages.get(event.message_id);
-      entry?.card?.markReceived(isOwnFile(entry.data) ? "Получатель скачал файл" : "Скачано");
+      if (entry) {
+        entry.receivedText = isOwnFile(entry.data) ? "Получатель скачал файл" : "Скачано";
+        entry.card?.markReceived(entry.receivedText);
+      }
       break;
     }
     case "roles_changed":
@@ -556,7 +559,7 @@ async function advanceHandshake(slug) {
   channel.keys = keys;
   channel.cipher = cipher;
   showShapes(cipher.shapes);
-  channel.messages.forEach(revealText);
+  channel.messages.forEach(reveal);
   render();
   flushUploads();
 }
@@ -712,55 +715,80 @@ function addMessage(message) {
   const left = el("span", "feed-left");
   item.append(time, body);
 
-  let card = null;
-  if (message.kind === "file" && message.file) {
-    item.classList.add("file");
-    card = createFileCard(message.file, {
-      status: isOwnFile(message) ? "Ждёт скачивания" : "",
-    });
-    body.append(card.el, left);
-  }
-  let textEl = null;
+  const isText = message.kind === "text";
+  // Файла нет в сообщении, когда его уже скачали и удалили с сервера
+  const gone = !isText && !message.file;
+  const placeholder = gone
+    ? el("pre", "feed-text gone", "Файл больше недоступен")
+    : el("pre", "feed-text pending", "…");
+  body.append(placeholder, left);
   let copy = null;
-  if (!card) {
+  if (isText) {
     copy = el("button", "button", "Скопировать");
     copy.type = "button";
     copy.hidden = true;
-    // Файла нет в сообщении, когда его уже скачали и удалили с сервера
-    textEl =
-      message.kind === "text"
-        ? el("pre", "feed-text pending", "…")
-        : el("pre", "feed-text gone", "Файл больше недоступен");
-    body.append(textEl, left);
     item.append(copy);
+  } else {
+    item.classList.add("file");
   }
   // Новые сверху: обычно нужно именно последнее присланное
   const older = [...channel.messages.values()]
     .filter((m) => m.data.id < message.id)
     .sort((a, b) => b.data.id - a.data.id)[0];
   feedEl.insertBefore(item, older ? older.el : null);
-  const entry = { data: message, el: item, left, card, textEl, copy, text: null, opening: false };
+  const entry = {
+    data: message,
+    el: item,
+    left,
+    placeholder,
+    copy,
+    text: null,
+    card: null,
+    // file_downloaded может прийти раньше, чем расшифровано описание файла
+    receivedText: null,
+    opening: gone,
+  };
   channel.messages.set(message.id, entry);
   copy?.addEventListener("click", () => copyMessage(entry.text));
   updateLeft(entry);
-  revealText(entry);
+  reveal(entry);
 }
 
-// До общего ключа текст ждёт: после перезагрузки state приходит раньше, чем он посчитан
-async function revealText(entry) {
+// До общего ключа сообщение ждёт: после перезагрузки state приходит раньше, чем он посчитан
+async function reveal(entry) {
   const cipher = channel.cipher;
-  if (entry.data.kind !== "text" || !cipher || entry.text !== null || entry.opening) {
+  if (!cipher || entry.opening) {
     return;
   }
   entry.opening = true;
+  const slug = channel.slug;
+  const message = entry.data;
   try {
-    entry.text = await openText(cipher.textKey, channel.slug, fromBase64Url(entry.data.payload));
-    entry.textEl.textContent = entry.text;
-    entry.textEl.classList.remove("pending");
-    entry.copy.hidden = false;
+    const payload = fromBase64Url(message.payload);
+    if (message.kind === "text") {
+      entry.text = await openText(cipher.textKey, slug, payload);
+      entry.placeholder.textContent = entry.text;
+      entry.placeholder.classList.remove("pending");
+      entry.copy.hidden = false;
+      return;
+    }
+    const meta = await openFileMeta(cipher.textKey, slug, payload);
+    // Имя и размер — из описания; у сервера только размер шифротекста
+    const file = { ...message.file, name: meta.name, size: meta.size, stored_size: message.file.size };
+    entry.card = createFileCard(file, {
+      status: isOwnFile(message) ? "Ждёт скачивания" : "",
+      decrypt: (sealed) => openFile(cipher.fileKey, slug, meta.nonce, sealed),
+    });
+    entry.placeholder.replaceWith(entry.card.el);
+    if (entry.receivedText) {
+      entry.card.markReceived(entry.receivedText);
+    }
   } catch {
-    entry.textEl.textContent = "Не удалось расшифровать сообщение";
-    entry.textEl.classList.replace("pending", "undecryptable");
+    entry.placeholder.textContent =
+      message.kind === "text"
+        ? "Не удалось расшифровать сообщение"
+        : "Не удалось расшифровать описание файла";
+    entry.placeholder.classList.replace("pending", "undecryptable");
   }
 }
 
@@ -829,6 +857,7 @@ function sendFiles(files) {
       url: () => `${CHANNEL_API}/${encodeURIComponent(channel.slug)}/files`,
       headers: () => ({ "X-Participant-Token": channel.token }),
       list: channelUploadsEl,
+      encrypt: sealChannelFile,
       onDone: flushUploads,
       onRemoved: (removed) => {
         channel.uploads = channel.uploads.filter((item) => item !== removed);
@@ -836,6 +865,18 @@ function sendFiles(files) {
     });
     channel.uploads.push(upload);
   }
+}
+
+// Сервер получает только шифротекст; имя, размер и nonce уходят зашифрованным описанием
+async function sealChannelFile(file) {
+  const { slug, cipher } = channel;
+  const { body, nonce } = await sealFile(cipher.fileKey, slug, file);
+  const meta = await sealFileMeta(cipher.textKey, slug, {
+    name: file.name || "файл",
+    size: file.size,
+    nonce,
+  });
+  return { body, payload: toBase64Url(meta) };
 }
 
 // Загруженные файлы отправляем в канал; без связи — дождутся переподключения (state)
@@ -848,7 +889,9 @@ function flushUploads() {
       upload.status.textContent = "Ждёт связи…";
       continue;
     }
-    channel.ws.send(JSON.stringify({ type: "send_file", file_id: upload.id }));
+    channel.ws.send(
+      JSON.stringify({ type: "send_file", file_id: upload.id, payload: upload.sealed.payload }),
+    );
     upload.sent = true;
     upload.status.textContent = "Отправляется…";
   }

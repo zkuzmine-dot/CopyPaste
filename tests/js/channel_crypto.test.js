@@ -175,6 +175,110 @@ test("испорченное, обрезанное или чужое сообщ�
   await assert.rejects(cc.openMessage(joiner.textKey, "file", SLUG, payload));
 });
 
+const CHUNK = 64 * 1024;
+const STORED_CHUNK = CHUNK + 16;
+
+function randomBlob(size) {
+  const bytes = new Uint8Array(size);
+  for (let offset = 0; offset < size; offset += 65536) {
+    crypto.getRandomValues(bytes.subarray(offset, Math.min(offset + 65536, size)));
+  }
+  return { blob: new Blob([bytes]), bytes };
+}
+
+async function bytesOf(blob) {
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+test("файл: куски по 64 КБ, у каждого тег; второе устройство расшифровывает", async () => {
+  const { creator, joiner } = await exchange();
+  for (const size of [1, CHUNK - 1, CHUNK, CHUNK + 1, 3 * CHUNK + 5]) {
+    const { blob, bytes } = randomBlob(size);
+
+    const { body, nonce } = await cc.sealFile(creator.fileKey, SLUG, blob);
+
+    assert.equal(nonce.length, 8);
+    assert.equal(body.size, size + 16 * Math.ceil(size / CHUNK));
+    assert.deepEqual(await bytesOf(await cc.openFile(joiner.fileKey, SLUG, nonce, body)), bytes);
+  }
+});
+
+test("файл: подмена, перестановка, обрезка и чужой ключ не проходят", async () => {
+  const { creator, joiner } = await exchange();
+  const { blob } = randomBlob(3 * CHUNK);
+  const { body, nonce } = await cc.sealFile(creator.fileKey, SLUG, blob);
+  const sealed = await bytesOf(body);
+  const open = (data, options = {}) =>
+    cc.openFile(options.key ?? joiner.fileKey, options.slug ?? SLUG, options.nonce ?? nonce, new Blob([data]));
+
+  const flipped = sealed.slice();
+  flipped[CHUNK + 100] ^= 1;
+  const swapped = new Uint8Array(sealed.length);
+  swapped.set(sealed.subarray(STORED_CHUNK, 2 * STORED_CHUNK), 0);
+  swapped.set(sealed.subarray(0, STORED_CHUNK), STORED_CHUNK);
+  swapped.set(sealed.subarray(2 * STORED_CHUNK), 2 * STORED_CHUNK);
+  const otherNonce = nonce.slice();
+  otherNonce[0] ^= 1;
+
+  await assert.rejects(open(flipped), "подменённый байт");
+  await assert.rejects(open(swapped), "переставленные куски");
+  // Без последнего куска предпоследний выглядит последним, но зашифрован не как последний
+  await assert.rejects(open(sealed.subarray(0, 2 * STORED_CHUNK)), "обрезка по границе куска");
+  await assert.rejects(open(sealed.subarray(0, sealed.length - 1)), "без последнего байта");
+  await assert.rejects(open(new Uint8Array(0)), "пустой");
+  await assert.rejects(open(sealed, { nonce: otherNonce }), "чужой nonce");
+  await assert.rejects(open(sealed, { slug: "zzzz2345" }), "другой канал");
+  await assert.rejects(open(sealed, { key: joiner.textKey }), "ключ для текста");
+});
+
+test("описание файла: имя, размер и nonce доходят, имя обрезается до 255 знаков", async () => {
+  const { creator, joiner } = await exchange();
+  const nonce = Uint8Array.from({ length: 8 }, (_, i) => i);
+
+  const payload = await cc.sealFileMeta(creator.textKey, SLUG, {
+    name: "отчёт.pdf",
+    size: 12345,
+    nonce,
+  });
+  const long = await cc.sealFileMeta(creator.textKey, SLUG, { name: "я".repeat(300), size: 1, nonce });
+
+  assert.deepEqual(await cc.openFileMeta(joiner.textKey, SLUG, payload), {
+    name: "отчёт.pdf",
+    size: 12345,
+    nonce,
+  });
+  assert.equal((await cc.openFileMeta(joiner.textKey, SLUG, long)).name.length, 255);
+  assert.equal(Buffer.from(payload).includes(Buffer.from("отчёт")), false);
+});
+
+test("описание файла укладывается в лимит сервера даже с худшим именем", async () => {
+  const { creator } = await exchange();
+  // Управляющие знаки JSON экранирует как \\uXXXX — по 6 байт на знак
+  const worst = "\u0001".repeat(300);
+
+  const payload = await cc.sealFileMeta(creator.textKey, SLUG, {
+    name: worst,
+    size: Number.MAX_SAFE_INTEGER,
+    nonce: new Uint8Array(8),
+  });
+
+  // FILE_META_PAYLOAD_MAX_BYTES в app/schemas/channel.py
+  assert.ok(payload.length <= 12 + 2048 + 16, String(payload.length));
+});
+
+test("описание файла не выдать за текст и наоборот", async () => {
+  const { creator, joiner } = await exchange();
+  const meta = await cc.sealFileMeta(creator.textKey, SLUG, {
+    name: "a.txt",
+    size: 1,
+    nonce: new Uint8Array(8),
+  });
+  const text = await cc.sealText(creator.textKey, SLUG, '{"name":"a.txt","size":1,"nonce":"AAAAAAAAAAA"}');
+
+  await assert.rejects(cc.openText(joiner.textKey, SLUG, meta));
+  await assert.rejects(cc.openFileMeta(joiner.textKey, SLUG, text));
+});
+
 test("фигуры считаются из обоих ключей по 5 бит", async () => {
   const creatorKey = Uint8Array.from({ length: 65 }, (_, i) => i);
   const joinerKey = Uint8Array.from({ length: 65 }, (_, i) => 255 - i);

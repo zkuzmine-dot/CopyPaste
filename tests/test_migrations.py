@@ -120,6 +120,33 @@ def test_encryption_migration_drops_plain_texts(config):
     assert (messages, open_channels) == (0, 0)
 
 
+def test_file_encryption_migration_drops_files_without_description(config):
+    command.upgrade(config, "d3a7f9c1e2b4")
+    on_async_connection(
+        lambda connection: connection.execute(
+            text(
+                "WITH c AS (INSERT INTO channels (slug) VALUES ('open0003') RETURNING id), "
+                "p AS (INSERT INTO participants (channel_id, token_hash, role) "
+                "SELECT id, 'hash', 'sender' FROM c RETURNING id, channel_id) "
+                "INSERT INTO messages (channel_id, sender_id, kind, expires_at) "
+                "SELECT channel_id, id, 'file', now() + interval '5 minutes' FROM p"
+            )
+        )
+    )
+
+    command.upgrade(config, "e6b2d8a4f9c1")
+
+    messages, open_channels = on_async_connection(
+        lambda connection: connection.execute(
+            text(
+                "SELECT (SELECT count(*) FROM messages), "
+                "(SELECT count(*) FROM channels WHERE closed_at IS NULL)"
+            )
+        ).one()
+    )
+    assert (messages, open_channels) == (0, 0)
+
+
 def test_models_match_migrations(config):
     command.upgrade(config, "head")
 

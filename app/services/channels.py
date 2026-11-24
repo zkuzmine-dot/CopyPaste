@@ -196,7 +196,7 @@ async def _lock_as_sender(db: AsyncSession, participant: Participant) -> None:
 
 
 async def _insert_message(
-    db: AsyncSession, participant: Participant, kind: MessageKind, payload: bytes | None, ttl: int
+    db: AsyncSession, participant: Participant, kind: MessageKind, payload: bytes, ttl: int
 ) -> Message:
     # INSERT ... RETURNING, а не db.add: срок считает БД (её now()), и он сразу приходит в
     # объект. После обычного flush атрибут с SQL-выражением «протухает» и догружается
@@ -226,13 +226,16 @@ async def add_message(db: AsyncSession, participant: Participant, payload: bytes
 
 
 async def add_file_message(
-    db: AsyncSession, participant: Participant, public_id: str
+    db: AsyncSession, participant: Participant, public_id: str, payload: bytes
 ) -> tuple[Message, StoredFile]:
-    """FilesNotAvailableError, если файл не свой или уже отправлен: транзакцию нужно откатить."""
+    """payload — зашифрованное описание файла.
+
+    FilesNotAvailableError, если файл не свой или уже отправлен: транзакцию нужно откатить.
+    """
     await _lock_as_sender(db, participant)
     # Дольше текста: большой файл по медленной сети успевает скачаться
     message = await _insert_message(
-        db, participant, MessageKind.FILE, None, settings.CHANNEL_FILE_TTL_SECONDS
+        db, participant, MessageKind.FILE, payload, settings.CHANNEL_FILE_TTL_SECONDS
     )
     stored = await files_service.attach_to_message(
         db, message.id, public_id, uploaded_by_id=participant.id

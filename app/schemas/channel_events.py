@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from app.db.models.channel import ParticipantRole
 from app.schemas.channel import (
     Base64Url,
+    EncryptedFileMeta,
     EncryptedText,
     KeyExchangeRead,
     MessageRead,
@@ -28,6 +29,8 @@ class SendFileEvent(BaseModel):
     type: Literal["send_file"]
     # id из POST /api/channels/{slug}/files: сам файл идёт по HTTP, сюда — только ссылка на него
     file_id: str = Field(min_length=1, max_length=64)
+    # Зашифрованное описание: имя, размер и nonce файла. Сервер знает только размер шифротекста
+    payload: EncryptedFileMeta
 
 
 class BecomeSenderEvent(BaseModel):
