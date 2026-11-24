@@ -23,6 +23,8 @@
 `localStorage` (`copypaste:theme`), без него тема следует за системой и меняется вместе с ней.
 Тему ставит `static/prefs.js` в `<head>` до стилей, поэтому страница не мигает другим цветом.
 
+<img alt="Переключение темы: солнце заходит за горизонт, восходит луна" src="docs/screenshots/ru/theme.gif" width="489">
+
 Сайт на русском и английском, кнопка в шапке переключает язык на месте, без перезагрузки:
 черновик в редакторе и прочитанная одноразовая заметка не теряются. Выбор хранится в
 `localStorage` (`copypaste:lang`), без него сайт открывается на русском. Переводится только то,
@@ -33,6 +35,31 @@
 ставится через `setText`/`msg` с `{параметрами}` и склонениями `{n:файл|файла|файлов}`.
 Новую строку достаточно добавить в словарь: `make test-js` проверит, что у каждой русской строки
 есть перевод с теми же параметрами и что в словаре нет лишнего.
+
+## Как выглядит
+
+Картинки следуют теме GitHub: в тёмной теме показываются тёмные снимки.
+
+**Главная**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ru/home-dark.png">
+  <img alt="Главная страница: новая заметка и канал" src="docs/screenshots/ru/home-light.png">
+</picture>
+
+**Заметка** — ссылка, QR-код и файлы
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ru/note-dark.png">
+  <img alt="Сохранённая заметка со ссылкой, QR-кодом и двумя файлами" src="docs/screenshots/ru/note-light.png">
+</picture>
+
+**Канал** — компьютер получателя и телефон отправителя, фигуры в капсулах совпадают
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ru/channel-dark.png">
+  <img alt="Канал: получатель на компьютере и отправитель на телефоне с одинаковыми проверочными фигурами" src="docs/screenshots/ru/channel-light.png">
+</picture>
 
 ## Запуск
 

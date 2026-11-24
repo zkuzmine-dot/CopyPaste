@@ -24,6 +24,8 @@ The choice is kept in `localStorage` (`copypaste:theme`); without it the theme f
 and changes along with it. `static/prefs.js` sets the theme in `<head>` before the styles, so the
 page never flashes in the wrong colours.
 
+<img alt="Switching the theme: the sun sets below the horizon and the moon rises" src="docs/screenshots/en/theme.gif" width="489">
+
 The site is in Russian and English; the button in the header switches the language in place,
 without a reload, so a draft in the editor or a one-time note that was just read is not lost. The
 choice is kept in `localStorage` (`copypaste:lang`); without it the site opens in Russian. Only
@@ -36,6 +38,31 @@ of the page by itself; text from the code is set via `setText`/`msg` with `{para
 such as `{n:файл|файла|файлов}` (`{n:file|files}` in English). Adding a new string to the
 dictionary is enough: `make test-js` checks that every Russian string has a translation with the
 same parameters and that the dictionary has nothing extra.
+
+## Screenshots
+
+The images follow your GitHub theme: in dark mode you see the dark screenshots.
+
+**Home**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/home-dark.png">
+  <img alt="Home page: new note and channel" src="docs/screenshots/en/home-light.png">
+</picture>
+
+**Note** with a link, a QR code and files
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/note-dark.png">
+  <img alt="A saved note with a link, a QR code and two files" src="docs/screenshots/en/note-light.png">
+</picture>
+
+**Channel**: the receiver's computer and the sender's phone, with matching shapes in the capsules
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/channel-dark.png">
+  <img alt="Channel: the receiver on a computer and the sender on a phone with the same verification shapes" src="docs/screenshots/en/channel-light.png">
+</picture>
 
 ## Running
 
