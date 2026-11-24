@@ -570,6 +570,11 @@ make test
 make test-js
 ```
 
+То же самое GitHub Actions запускает на каждый PR и на push в `main` и `dev`
+(`.github/workflows/ci.yml`): `ruff check`, `ruff format --check`, mypy, pytest и
+`node --test`. Окружение — как в `docker-compose.yml`: Python 3.13, PostgreSQL 16, Redis 7;
+`FILES_SIGNING_SECRET` генерируется на каждый запуск.
+
 `make test-js` проверяет `static/channel-crypto.js` в Node тем же WebCrypto, что в браузере:
 одинаковые ключи и фигуры у обоих устройств, разные — при подмене ключа, независимый пересчёт
 фигур через `node:crypto`; текст, зашифрованный одним устройством, читает другое, а испорченный,
