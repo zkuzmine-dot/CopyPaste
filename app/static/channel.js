@@ -12,6 +12,7 @@ const CLOSE_REPLACED = 4409;
 const CLOSE_CHANNEL_CLOSED = 4410;
 const SLUG_PATTERN = /^[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
 const KEYS_PENDING_TEXT = "Подождите: устройства ещё обмениваются ключами";
+const SHAPES_HINT_KEY = "copypaste:shapes-hint-seen";
 
 const chooseChannelBtn = document.getElementById("choose-channel");
 const navChannelBtn = document.getElementById("nav-channel");
@@ -19,10 +20,11 @@ const channelBarEl = document.getElementById("channel-bar");
 const channelRoleEl = document.getElementById("channel-role");
 const channelConnEl = document.getElementById("channel-conn");
 const channelSecureEl = document.getElementById("channel-secure");
+const channelSealBtn = document.getElementById("channel-seal");
 const channelSecureTextEl = document.getElementById("channel-secure-text");
-const channelVerifyBtn = document.getElementById("channel-verify");
-const channelVerifyEl = document.getElementById("channel-verify-panel");
 const channelShapesEl = document.getElementById("channel-shapes");
+const channelHintEl = document.getElementById("channel-hint");
+const channelHintOkBtn = document.getElementById("channel-hint-ok");
 const becomeSenderBtn = document.getElementById("become-sender");
 const channelInviteEl = document.getElementById("channel-invite");
 const channelQrEl = document.getElementById("channel-qr");
@@ -293,7 +295,7 @@ function leaveChannel() {
     handshake: Promise.resolve(),
   });
   channelShapesEl.replaceChildren();
-  setVerifyOpen(false);
+  setHintOpen(false);
   channel.messages.clear();
   feedEl.replaceChildren();
   for (const upload of channel.uploads) {
@@ -561,6 +563,7 @@ async function advanceHandshake(slug) {
   showShapes(cipher.shapes);
   channel.messages.forEach(reveal);
   render();
+  offerShapesHint();
   flushUploads();
 }
 
@@ -594,23 +597,34 @@ function shapeLabel({ shape, filled }) {
 function showShapes(shapes) {
   channelShapesEl.replaceChildren(
     ...shapes.map((item) => {
-      const li = document.createElement("li");
-      li.className = "shape";
+      const span = document.createElement("span");
+      span.className = "seal-shape";
       const paint = item.filled
         ? 'fill="currentColor"'
         : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"';
       // Разметка из постоянной таблицы SHAPES, данных собеседника в ней нет
-      li.innerHTML = `<svg role="img" viewBox="0 0 24 24" width="44" height="44"><g ${paint}>${SHAPES[item.shape][2]}</g></svg>`;
-      li.firstElementChild.setAttribute("aria-label", shapeLabel(item));
-      return li;
+      span.innerHTML = `<svg role="img" viewBox="0 0 24 24" width="20" height="20"><g ${paint}>${SHAPES[item.shape][2]}</g></svg>`;
+      span.firstElementChild.setAttribute("aria-label", shapeLabel(item));
+      return span;
     }),
   );
 }
 
-function setVerifyOpen(open) {
-  channelVerifyEl.hidden = !open;
-  channelVerifyBtn.setAttribute("aria-expanded", String(open));
-  channelVerifyBtn.textContent = open ? "Скрыть фигуры" : "Проверить";
+function setHintOpen(open) {
+  channelHintEl.hidden = !open;
+  channelSealBtn.setAttribute("aria-expanded", String(open));
+}
+
+// Подсказка всплывает сама один раз на устройстве, дальше её открывает капсула
+function offerShapesHint() {
+  if (!channelSecureEl.hidden && localStorage.getItem(SHAPES_HINT_KEY) === null) {
+    setHintOpen(true);
+  }
+}
+
+function dismissHint() {
+  setHintOpen(false);
+  localStorage.setItem(SHAPES_HINT_KEY, "1");
 }
 
 // От состояния зависит точка перед текстом: зелёная — в сети, янтарная — нет связи
@@ -657,17 +671,17 @@ function render() {
   // До второго устройства обмениваться ключами не с кем — об этом уже говорит приглашение
   const ready = Boolean(channel.cipher);
   channelSecureEl.hidden = !active || !channel.peerJoined;
-  channelSecureEl.dataset.state = ready ? "ready" : "pending";
+  channelSealBtn.dataset.state = ready ? "ready" : "pending";
+  channelSealBtn.disabled = !ready;
   if (ready) {
     channelSecureTextEl.textContent = "Зашифровано";
   } else if (channel.peerOnline) {
     channelSecureTextEl.textContent = "Обмен ключами…";
   } else {
-    channelSecureTextEl.textContent = "Ключи обменяются, когда второе устройство будет в сети";
+    channelSecureTextEl.textContent = "Обмен ключами: ждём второе устройство";
   }
-  channelVerifyBtn.hidden = !active || !ready;
-  if (channelVerifyBtn.hidden && !channelVerifyEl.hidden) {
-    setVerifyOpen(false);
+  if (channelSecureEl.hidden) {
+    setHintOpen(false);
   }
 
   // QR нужен, только пока второе устройство не подключалось: третьего канал не пустит
@@ -975,7 +989,24 @@ navChannelBtn.addEventListener("click", () => {
 });
 joinFormEl.addEventListener("submit", joinByCode);
 becomeSenderBtn.addEventListener("click", becomeSender);
-channelVerifyBtn.addEventListener("click", () => setVerifyOpen(channelVerifyEl.hidden));
+channelSealBtn.addEventListener("click", () => {
+  if (channelHintEl.hidden) {
+    setHintOpen(true);
+  } else {
+    dismissHint();
+  }
+});
+channelHintOkBtn.addEventListener("click", dismissHint);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !channelHintEl.hidden) {
+    dismissHint();
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!channelHintEl.hidden && !channelSecureEl.contains(event.target)) {
+    dismissHint();
+  }
+});
 channelSendBtn.addEventListener("click", sendMessage);
 bindFilePicker(channelAttachBtn, channelAttachInput, sendFiles);
 acceptDroppedAndPasted(channelComposeEl, channelTextEl, sendFiles);
