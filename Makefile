@@ -1,4 +1,4 @@
-.PHONY: up down migrate revision test lint format
+.PHONY: up down migrate revision test test-js lint format
 
 up:
 	docker compose up --build
@@ -15,6 +15,10 @@ revision:
 
 test:
 	docker compose exec app pytest $(args)
+
+# На хосте: в контейнере app только Python. Нужен Node 22+
+test-js:
+	node --test "tests/js/*.test.js"
 
 lint:
 	docker compose exec app ruff check .

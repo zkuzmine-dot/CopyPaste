@@ -9,6 +9,7 @@ const CONFIRM_TIMEOUT_MS = 10000;
 const STALL_TIMEOUT_MS = 15000;
 
 class FileGoneError extends Error {}
+class FileDamagedError extends Error {}
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -79,11 +80,12 @@ function uploadErrorText(status) {
   }
 }
 
-// XMLHttpRequest, а не fetch: прогресс отправки есть только у него
-function uploadFile(url, file, { headers = {}, onProgress } = {}) {
+// XMLHttpRequest, а не fetch: прогресс отправки есть только у него.
+// Без name сервер имени не узнаёт — так загружается зашифрованный файл канала
+function uploadFile(url, body, { name, headers = {}, onProgress } = {}) {
   const xhr = new XMLHttpRequest();
   const promise = new Promise((resolve, reject) => {
-    xhr.open("POST", `${url}?name=${encodeURIComponent(file.name || "file")}`);
+    xhr.open("POST", name === undefined ? url : `${url}?name=${encodeURIComponent(name)}`);
     for (const [name, value] of Object.entries(headers)) {
       xhr.setRequestHeader(name, value);
     }
@@ -101,7 +103,7 @@ function uploadFile(url, file, { headers = {}, onProgress } = {}) {
     });
     xhr.addEventListener("error", () => reject(new Error("Нет связи с сервером")));
     xhr.addEventListener("abort", () => reject(new Error("Загрузка отменена")));
-    xhr.send(file);
+    xhr.send(body);
   });
   return { promise, abort: () => xhr.abort() };
 }
@@ -124,8 +126,12 @@ function createProgress() {
 }
 
 // Одна загрузка в списке: прогресс, ошибка с повтором, отмена крестиком.
-// onDone — когда файл загружен, onChange — при любой смене состояния
-function startUpload(file, { url, headers = () => ({}), list, onDone, onChange, onRemoved }) {
+// onDone — когда файл загружен, onChange — при любой смене состояния.
+// encrypt(file) → { body, payload }: загружается body, а payload остаётся в upload.sealed
+function startUpload(
+  file,
+  { url, headers = () => ({}), list, onDone, onChange, onRemoved, encrypt },
+) {
   const item = el("li", "upload-item");
   const status = el("span", "file-status");
   const progress = createProgress();
@@ -145,7 +151,15 @@ function startUpload(file, { url, headers = () => ({}), list, onDone, onChange, 
   );
   list.append(item);
 
-  const upload = { file, id: null, state: "uploading", el: item, status, request: null };
+  const upload = {
+    file,
+    id: null,
+    state: "uploading",
+    el: item,
+    status,
+    request: null,
+    sealed: null,
+  };
 
   function fail(message, canRetry) {
     upload.state = "error";
@@ -155,13 +169,36 @@ function startUpload(file, { url, headers = () => ({}), list, onDone, onChange, 
     onChange?.(upload);
   }
 
-  function run() {
+  async function run() {
     upload.state = "uploading";
     status.textContent = "";
     retry.hidden = true;
     progress.set(0);
     onChange?.(upload);
-    upload.request = uploadFile(url(), file, {
+    let body = file;
+    let name = file.name || "file";
+    if (encrypt) {
+      // Шифруем один раз: повтор загрузки отправит тот же шифротекст с тем же описанием
+      if (!upload.sealed) {
+        status.textContent = "Шифруется…";
+        try {
+          upload.sealed = await encrypt(file);
+        } catch {
+          if (upload.state !== "removed") {
+            fail("Не удалось зашифровать файл", true);
+          }
+          return;
+        }
+        if (upload.state === "removed") {
+          return;
+        }
+        status.textContent = "";
+      }
+      body = upload.sealed.body;
+      name = undefined;
+    }
+    upload.request = uploadFile(url(), body, {
+      name,
       headers: headers(),
       onProgress: (part) => progress.set(part),
     });
@@ -278,20 +315,34 @@ async function confirmReceived(url) {
 
 // Одноразовый файл качаем сами, а не обычной ссылкой: только так страница знает, что
 // он дошёл целиком, и может подтвердить получение. Сервер этого знать не может.
-// После обрыва повторный run() продолжает с того же байта (Range)
+// После обрыва повторный run() продолжает с того же байта (Range).
+// Файл канала зашифрован: stored_size — размер шифротекста на сервере, decrypt проверяет и
+// расшифровывает его. Получение подтверждаем только после успешной расшифровки
 class OneTimeDownload {
-  constructor(file, onProgress) {
+  constructor(file, onProgress, decrypt = null) {
     this.file = file;
     this.onProgress = onProgress;
+    this.decrypt = decrypt;
+    this.size = file.stored_size ?? file.size;
     this.chunks = [];
     this.received = 0;
   }
 
   async run() {
-    if (this.received < this.file.size) {
+    if (this.received < this.size) {
       await this.fetchRest();
     }
-    saveBlob(new Blob(this.chunks, { type: this.file.content_type }), this.file.name);
+    let blob = new Blob(this.chunks, { type: this.file.content_type });
+    if (this.decrypt) {
+      try {
+        blob = await this.decrypt(new Blob(this.chunks));
+      } catch {
+        this.chunks = [];
+        this.received = 0;
+        throw new FileDamagedError("Файл повреждён или подменён");
+      }
+    }
+    saveBlob(blob, this.file.name);
     await confirmReceived(this.file.received_url);
   }
 
@@ -328,20 +379,21 @@ class OneTimeDownload {
         }
         this.chunks.push(value);
         this.received += value.length;
-        this.onProgress?.(this.received / this.file.size);
+        this.onProgress?.(this.received / this.size);
       }
     } finally {
       clearTimeout(watchdog);
     }
-    if (this.received < this.file.size) {
+    if (this.received < this.size) {
       throw new Error("Связь оборвалась");
     }
   }
 }
 
 // Карточка файла: превью, имя, размер, скачивание.
-// Обычный файл — простой ссылкой, одноразовый — с прогрессом и подтверждением получения
-function createFileCard(file, { status = "", onReceived } = {}) {
+// Обычный файл — простой ссылкой, одноразовый — с прогрессом и подтверждением получения.
+// decrypt — для файла канала, см. OneTimeDownload
+function createFileCard(file, { status = "", onReceived, decrypt } = {}) {
   const card = el("div", "file-card");
   if (file.preview_url) {
     const preview = el("img", "file-preview");
@@ -360,7 +412,7 @@ function createFileCard(file, { status = "", onReceived } = {}) {
   if (file.received_url) {
     const button = el("button", "button", "Скачать");
     button.type = "button";
-    const download = new OneTimeDownload(file, (part) => progress.set(part));
+    const download = new OneTimeDownload(file, (part) => progress.set(part), decrypt);
     button.addEventListener("click", async () => {
       button.disabled = true;
       card.classList.remove("interrupted");
@@ -378,6 +430,13 @@ function createFileCard(file, { status = "", onReceived } = {}) {
           actions.replaceChildren();
           progress.hide();
           statusEl.textContent = error.message;
+          return;
+        }
+        if (error instanceof FileDamagedError) {
+          progress.hide();
+          button.textContent = "Скачать заново";
+          statusEl.textContent = error.message;
+          card.classList.add("interrupted");
           return;
         }
         button.textContent = "Продолжить";

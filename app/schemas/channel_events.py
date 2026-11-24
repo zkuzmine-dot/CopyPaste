@@ -3,8 +3,14 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, TypeAdapter
 
 from app.db.models.channel import ParticipantRole
-from app.schemas.channel import MessageRead
-from app.schemas.note import NoteText
+from app.schemas.channel import (
+    Base64Url,
+    EncryptedFileMeta,
+    EncryptedText,
+    KeyExchangeRead,
+    MessageRead,
+    PublicKey,
+)
 
 # --- клиент → сервер ---
 
@@ -16,21 +22,29 @@ class AuthEvent(BaseModel):
 
 class SendEvent(BaseModel):
     type: Literal["send"]
-    text: NoteText
+    payload: EncryptedText
 
 
 class SendFileEvent(BaseModel):
     type: Literal["send_file"]
     # id из POST /api/channels/{slug}/files: сам файл идёт по HTTP, сюда — только ссылка на него
     file_id: str = Field(min_length=1, max_length=64)
+    # Зашифрованное описание: имя, размер и nonce файла. Сервер знает только размер шифротекста
+    payload: EncryptedFileMeta
 
 
 class BecomeSenderEvent(BaseModel):
     type: Literal["become_sender"]
 
 
+class PublicKeyEvent(BaseModel):
+    type: Literal["public_key"]
+    key: PublicKey
+
+
 ClientEvent = Annotated[
-    AuthEvent | SendEvent | SendFileEvent | BecomeSenderEvent, Field(discriminator="type")
+    AuthEvent | SendEvent | SendFileEvent | BecomeSenderEvent | PublicKeyEvent,
+    Field(discriminator="type"),
 ]
 client_event_adapter: TypeAdapter[ClientEvent] = TypeAdapter(ClientEvent)
 
@@ -38,12 +52,22 @@ client_event_adapter: TypeAdapter[ClientEvent] = TypeAdapter(ClientEvent)
 # --- сервер → клиент ---
 
 
-class StateEvent(BaseModel):
+class StateEvent(KeyExchangeRead):
     type: Literal["state"] = "state"
     role: ParticipantRole
     peer_joined: bool
     peer_online: bool
     messages: list[MessageRead]
+
+
+class PeerJoinedEvent(BaseModel):
+    type: Literal["peer_joined"] = "peer_joined"
+    key_commitment: Base64Url
+
+
+class PeerKeyEvent(BaseModel):
+    type: Literal["peer_key"] = "peer_key"
+    key: Base64Url
 
 
 class MessageEvent(MessageRead):

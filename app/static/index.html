@@ -32,8 +32,8 @@
       <section class="home-section live" aria-labelledby="home-channel-title">
         <h2 id="home-channel-title" class="home-section-title">Канал</h2>
         <p class="home-section-text">
-          Текст и файлы между двумя устройствами в реальном времени. Сообщения исчезают через
-          несколько минут.
+          Текст и файлы между двумя устройствами в реальном времени. Сквозное шифрование,
+          сообщения живут несколько минут.
         </p>
         <button id="choose-channel" class="button primary" type="button">Открыть канал</button>
 
@@ -205,6 +205,21 @@
     </div>
 
     <section id="channel-view" class="channel" hidden>
+      <div id="channel-secure" class="seal-dock" hidden>
+        <button id="channel-seal" class="seal" type="button" aria-expanded="false" aria-controls="channel-hint">
+          <svg class="seal-lock" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="1"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          <span id="channel-secure-text" class="seal-text"></span>
+          <span id="channel-shapes" class="seal-shapes"></span>
+        </button>
+        <div id="channel-hint" class="seal-hint" hidden>
+          <p class="seal-hint-text">
+            Сравните эти фигуры со вторым устройством. Если совпадают, переписку никто не читает.
+            Если различаются, ничего не отправляйте и откройте новый канал.
+          </p>
+          <button id="channel-hint-ok" class="button" type="button">Понятно</button>
+        </div>
+      </div>
+
       <div id="channel-bar" class="channel-bar">
         <span id="channel-role" class="role-badge"></span>
         <span id="channel-conn" class="conn"></span>
@@ -296,6 +311,7 @@
               <li><div class="step">Откройте канал.</div></li>
               <li><div class="step">На втором устройстве отсканируйте QR-код или введите код.</div></li>
               <li><div class="step">Отправитель шлёт текст и файлы, получатель видит их сразу.</div></li>
+              <li><div class="step">Если хотите, сравните фигуры вверху канала на обоих устройствах.</div></li>
             </ol>
           </div>
         </div>
@@ -305,8 +321,23 @@
         <h2 id="security-title" class="about-heading">Безопасность</h2>
         <ul class="about-list">
           <li>
-            Заметка с паролем шифруется ключом из пароля (Argon2id + AES-256-GCM). Сам пароль
+            Канал шифруется сквозным образом
+            (<span class="term">ECDH P-256</span> + <span class="term">AES-256-GCM</span>): текст и файлы шифруются
+            на одном устройстве и расшифровываются только на другом. Сервер пересылает
+            зашифрованные данные и прочитать их не может.
+          </li>
+          <li>
+            Чтобы убедиться, что посередине никого нет, сравните четыре фигуры вверху канала на
+            обоих устройствах.
+          </li>
+          <li>
+            Заметка с паролем шифруется ключом из пароля
+            (Argon2id + <span class="term">AES-256-GCM</span>). Сам пароль
             не хранится.
+          </li>
+          <li>
+            Заметки шифруются на сервере, а не сквозным образом: в момент сохранения и открытия
+            текст проходит через сервер.
           </li>
           <li>
             После 5 неверных паролей заметка блокируется на минуту, после 10 с одного адреса ввод
@@ -317,12 +348,8 @@
             после скачивания.
           </li>
           <li>
-            Превью есть только у PNG, JPEG, GIF и WebP. Остальные файлы всегда скачиваются, а не
-            открываются в браузере.
-          </li>
-          <li>
-            Это не сквозное шифрование: в момент сохранения и открытия текст проходит через
-            сервер.
+            Превью есть только у картинок в заметках: PNG, JPEG, GIF и WebP. Остальные файлы
+            всегда скачиваются, а не открываются в браузере.
           </li>
         </ul>
       </section>
@@ -362,8 +389,20 @@
             <dd>В нём 5 минут ничего не отправляли. Откройте новый.</dd>
           </div>
           <div class="faq-item">
+            <dt>Что значат фигуры?</dt>
+            <dd>
+              Это отпечаток ключей, которыми шифруется канал. Фигуры видны вверху канала: сравните
+              их на обоих устройствах. Если совпадают, сообщения читаете только вы. Если
+              различаются, кто-то встал посередине: ничего не отправляйте и откройте новый канал.
+            </dd>
+          </div>
+          <div class="faq-item">
             <dt>Видит ли сервер мои данные?</dt>
-            <dd>Заметку без пароля сервер хранит как есть, а заметку с паролем хранит зашифрованной.</dd>
+            <dd>
+              Сообщения и файлы в канале не видит: ключ есть только у двух устройств. Заметку без
+              пароля сервер хранит как есть, а заметку с паролем хранит зашифрованной, но видит её
+              в момент сохранения и открытия.
+            </dd>
           </div>
         </dl>
       </section>
@@ -385,6 +424,8 @@
   </footer>
 
   <script src="/static/files.js"></script>
+  <script src="/static/channel-crypto.js"></script>
+  <script src="/static/channel-keystore.js"></script>
   <script src="/static/channel.js"></script>
   <script src="/static/app.js"></script>
 </body>

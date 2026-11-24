@@ -1,6 +1,6 @@
 // Канал: обмен текстом и файлами между двумя устройствами через WebSocket.
-// Использует showStatus и copyToClipboard из app.js и функции файлов из files.js —
-// они нужны только во время работы.
+// Использует showStatus и copyToClipboard из app.js, функции файлов из files.js, ключи из
+// channel-crypto.js и channel-keystore.js — они нужны только во время работы.
 
 const CHANNEL_API = "/api/channels";
 const CHANNEL_MAX_LENGTH = 100000;
@@ -11,12 +11,20 @@ const CLOSE_NOT_FOUND = 4404;
 const CLOSE_REPLACED = 4409;
 const CLOSE_CHANNEL_CLOSED = 4410;
 const SLUG_PATTERN = /^[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
+const KEYS_PENDING_TEXT = "Подождите: устройства ещё обмениваются ключами";
+const SHAPES_HINT_KEY = "copypaste:shapes-hint-seen";
 
 const chooseChannelBtn = document.getElementById("choose-channel");
 const navChannelBtn = document.getElementById("nav-channel");
 const channelBarEl = document.getElementById("channel-bar");
 const channelRoleEl = document.getElementById("channel-role");
 const channelConnEl = document.getElementById("channel-conn");
+const channelSecureEl = document.getElementById("channel-secure");
+const channelSealBtn = document.getElementById("channel-seal");
+const channelSecureTextEl = document.getElementById("channel-secure-text");
+const channelShapesEl = document.getElementById("channel-shapes");
+const channelHintEl = document.getElementById("channel-hint");
+const channelHintOkBtn = document.getElementById("channel-hint-ok");
 const becomeSenderBtn = document.getElementById("become-sender");
 const channelInviteEl = document.getElementById("channel-invite");
 const channelQrEl = document.getElementById("channel-qr");
@@ -56,6 +64,59 @@ const channel = {
   retryTimer: null,
   tickTimer: null,
   closedAction: null,
+  // Запись из channel-keystore.js и то, что о ключах знает сервер (из state и событий)
+  keys: null,
+  keySent: false,
+  peerCommitment: null,
+  peerKey: null,
+  // Общие ключи и фигуры. Пока их нет, писать в канал нельзя
+  cipher: null,
+  // Шаги обмена асинхронные, а события приходят подряд — выполняем шаги по очереди
+  handshake: Promise.resolve(),
+};
+
+// Порядок — как у значений из verificationShapes: shape — номер строки, filled — заливка
+const SHAPES = [
+  ["круг", "m", '<circle cx="12" cy="12" r="9.5"/>'],
+  ["квадрат", "m", '<rect x="3" y="3" width="18" height="18" rx="1"/>'],
+  ["треугольник", "m", '<polygon points="12,2.5 22,20.5 2,20.5"/>'],
+  ["ромб", "m", '<polygon points="12,1.5 22.5,12 12,22.5 1.5,12"/>'],
+  ["пятиугольник", "m", '<polygon points="12,2.3 21.7,9.3 18,20.8 6,20.8 2.3,9.3"/>'],
+  ["шестиугольник", "m", '<polygon points="12,1.8 20.9,6.9 20.9,17.1 12,22.2 3.1,17.1 3.1,6.9"/>'],
+  [
+    "звезда",
+    "f",
+    '<polygon points="12,1.8 14.6,9.1 22.4,9.3 16.2,14.1 18.4,21.6 12,17.2 5.6,21.6 7.8,14.1 1.6,9.3 9.4,9.1"/>',
+  ],
+  [
+    "плюс",
+    "m",
+    '<polygon points="8.8,2 15.2,2 15.2,8.8 22,8.8 22,15.2 15.2,15.2 15.2,22 8.8,22 8.8,15.2 2,15.2 2,8.8 8.8,8.8"/>',
+  ],
+  [
+    "крестик",
+    "m",
+    '<polygon transform="rotate(45 12 12)" points="9.1,2.5 14.9,2.5 14.9,9.1 21.5,9.1 21.5,14.9 14.9,14.9 14.9,21.5 9.1,21.5 9.1,14.9 2.5,14.9 2.5,9.1 9.1,9.1"/>',
+  ],
+  [
+    "сердце",
+    "n",
+    '<path d="M12 21.5C12 21.5 2.5 15 2.5 8.6A4.9 4.9 0 0 1 12 6.6A4.9 4.9 0 0 1 21.5 8.6C21.5 15 12 21.5 12 21.5Z"/>',
+  ],
+  ["полумесяц", "m", '<path d="M12.38 3.01A9 9 0 1 0 20.74 14.15A7 7 0 1 1 12.38 3.01Z"/>'],
+  ["стрелка", "f", '<polygon points="12,1.8 21.5,11 15.6,11 15.6,22 8.4,22 8.4,11 2.5,11"/>'],
+  ["полукруг", "m", '<path d="M2.5 17A9.5 9.5 0 0 1 21.5 17Z"/>'],
+  [
+    "капля",
+    "f",
+    '<path d="M12 1.8C12 1.8 4.6 10.6 4.6 15A7.4 7.4 0 0 0 19.4 15C19.4 10.6 12 1.8 12 1.8Z"/>',
+  ],
+  ["молния", "f", '<polygon points="14.5,1.5 4,13.5 10.8,13.5 8.8,22.5 20,9.8 13.2,9.8 16,1.5"/>'],
+  ["трапеция", "f", '<polygon points="7,4.5 17,4.5 22.5,19.5 1.5,19.5"/>'],
+];
+const SHAPE_FILL = {
+  true: { m: "залитый", f: "залитая", n: "залитое" },
+  false: { m: "контурный", f: "контурная", n: "контурное" },
 };
 
 function channelSlugFromPath() {
@@ -98,15 +159,25 @@ function setStarting(starting) {
   navChannelBtn.disabled = starting;
 }
 
+function newKeyRecord(role, keys) {
+  return { role, ...keys, revealedTo: null, peerKey: null, createdAt: Date.now() };
+}
+
 async function startChannel() {
+  if (!cryptoAvailable()) {
+    showStatus("Канал работает только по HTTPS", "error");
+    return;
+  }
   setStarting(true);
   try {
+    const keys = await createDeviceKeys();
     const response = await fetch(CHANNEL_API, { method: "POST" });
     if (!response.ok) {
       showStatus(`Не удалось создать канал (${response.status})`, "error");
       return;
     }
     const created = await response.json();
+    await saveChannelKeys(created.slug, newKeyRecord("creator", keys));
     saveToken(created.slug, created.token);
     history.pushState(null, "", `/c/${encodeURIComponent(created.slug)}`);
     route();
@@ -121,23 +192,56 @@ async function openChannel(slug) {
   leaveChannel();
   channel.slug = slug;
   render();
+  if (!cryptoAvailable()) {
+    showClosed(
+      "Нужен защищённый адрес",
+      "Канал шифрует сообщения в браузере, а браузер даёт шифрование только по HTTPS.",
+      "На главную",
+      () => {
+        history.pushState(null, "", "/");
+        route();
+      },
+    );
+    return;
+  }
+  pruneChannelKeys();
 
   let token = loadToken(slug);
-  if (!token) {
-    token = await joinChannel(slug);
-    // Пока ждали ответ, пользователь мог уйти со страницы канала
-    if (!token || channel.slug !== slug) {
+  let keys;
+  if (token) {
+    keys = await loadChannelKeys(slug);
+    if (channel.slug !== slug) {
       return;
     }
+    if (!keys) {
+      forgetToken(slug);
+      showClosed(
+        "Нет ключа канала",
+        "Ключ хранится только в браузере, где канал открыли, а здесь его нет.",
+      );
+      return;
+    }
+  } else {
+    const joined = await joinChannel(slug);
+    // Пока ждали ответ, пользователь мог уйти со страницы канала
+    if (!joined || channel.slug !== slug) {
+      return;
+    }
+    ({ token, keys } = joined);
   }
   channel.token = token;
+  channel.keys = keys;
   connect();
 }
 
 async function joinChannel(slug) {
   try {
+    const keys = await createDeviceKeys();
+    const commitment = toBase64Url(await keyCommitment(keys.publicKey));
     const response = await fetch(`${CHANNEL_API}/${encodeURIComponent(slug)}/join`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key_commitment: commitment }),
     });
     if (response.status === 404) {
       showClosed("Канал не найден", "Он закрылся из-за бездействия или в ссылке ошибка.");
@@ -152,8 +256,10 @@ async function joinChannel(slug) {
       return null;
     }
     const joined = await response.json();
+    const record = newKeyRecord("joiner", keys);
+    await saveChannelKeys(slug, record);
     saveToken(slug, joined.token);
-    return joined.token;
+    return { token: joined.token, keys: record };
   } catch {
     showClosed("Не удалось подключиться", "Нет связи с сервером.", "Повторить", () =>
       openChannel(slug),
@@ -181,7 +287,15 @@ function leaveChannel() {
     retryTimer: null,
     tickTimer: null,
     closedAction: null,
+    keys: null,
+    keySent: false,
+    peerCommitment: null,
+    peerKey: null,
+    cipher: null,
+    handshake: Promise.resolve(),
   });
+  channelShapesEl.replaceChildren();
+  setHintOpen(false);
   channel.messages.clear();
   feedEl.replaceChildren();
   for (const upload of channel.uploads) {
@@ -227,9 +341,22 @@ function handleEvent(event) {
       channel.role = event.role;
       channel.peerJoined = event.peer_joined;
       channel.peerOnline = event.peer_online;
+      channel.keySent = event.key_sent;
+      channel.peerCommitment = event.peer_key_commitment;
+      channel.peerKey = event.peer_public_key;
       event.messages.forEach(addMessage);
       setConnection("");
       flushUploads();
+      queueHandshake();
+      break;
+    case "peer_joined":
+      channel.peerJoined = true;
+      channel.peerCommitment = event.key_commitment;
+      queueHandshake();
+      break;
+    case "peer_key":
+      channel.peerKey = event.key;
+      queueHandshake();
       break;
     case "message":
       addMessage(event);
@@ -239,7 +366,10 @@ function handleEvent(event) {
       break;
     case "file_downloaded": {
       const entry = channel.messages.get(event.message_id);
-      entry?.card?.markReceived(isOwnFile(entry.data) ? "Получатель скачал файл" : "Скачано");
+      if (entry) {
+        entry.receivedText = isOwnFile(entry.data) ? "Получатель скачал файл" : "Скачано";
+        entry.card?.markReceived(entry.receivedText);
+      }
       break;
     }
     case "roles_changed":
@@ -251,6 +381,14 @@ function handleEvent(event) {
       channel.peerJoined = channel.peerJoined || event.online;
       break;
     case "error":
+      if (event.code === "key_mismatch") {
+        keysMismatch();
+        return;
+      }
+      // Ключ уже у сервера: например, отправили его ещё раз сразу после переподключения
+      if (event.code === "key_already_sent") {
+        break;
+      }
       showStatus(errorText(event), "error");
       if (event.code === "not_sender" || event.code === "file_not_found") {
         failOldestSentUpload(errorText(event));
@@ -273,6 +411,10 @@ function errorText(event) {
       return "Слишком часто. Подождите секунду";
     case "file_not_found":
       return "Файл не отправлен: его уже отправили или загрузка устарела";
+    case "keys_not_ready":
+      return KEYS_PENDING_TEXT;
+    case "key_out_of_order":
+      return "Обмен ключами сбился. Обновите страницу";
     case "invalid_event":
       return `Сервер не принял сообщение: ${event.detail}`;
     default:
@@ -280,20 +422,25 @@ function errorText(event) {
   }
 }
 
+function forgetChannel(slug) {
+  forgetToken(slug);
+  forgetChannelKeys(slug);
+}
+
 function handleClose(code) {
   const slug = channel.slug;
   switch (code) {
     case CLOSE_CHANNEL_CLOSED:
-      forgetToken(slug);
+      forgetChannel(slug);
       showClosed("Канал закрыт", "Канал закрылся из-за бездействия.");
       return;
     case CLOSE_NOT_FOUND:
-      forgetToken(slug);
+      forgetChannel(slug);
       showClosed("Канал не найден", "Он закрылся из-за бездействия или в ссылке ошибка.");
       return;
     case CLOSE_UNAUTHORIZED:
-      forgetToken(slug);
-      showClosed("Нет доступа к каналу", "Ключ участника на этом устройстве не подошёл.");
+      forgetChannel(slug);
+      showClosed("Нет доступа к каналу", "Это устройство больше не участник канала.");
       return;
     case CLOSE_REPLACED:
       showClosed(
@@ -335,6 +482,151 @@ function setConnection(text) {
   render();
 }
 
+function queueHandshake() {
+  const slug = channel.slug;
+  channel.handshake = channel.handshake
+    .then(() => advanceHandshake(slug))
+    .catch(() => {
+      if (channel.slug === slug) {
+        showStatus("Не удалось обменяться ключами", "error");
+      }
+    });
+}
+
+// Делает следующий шаг обмена из того, что уже известно о ключах (README, «Обмен ключами»)
+async function advanceHandshake(slug) {
+  let keys = channel.keys;
+  if (channel.slug !== slug || !keys) {
+    return;
+  }
+  // Ключ собеседника не меняется, а создатель раскрывает свой одному отпечатку за канал.
+  // Иначе сервер, уже зная ключ создателя, мог бы прислать второй отпечаток, подобранный под
+  // совпадающие фигуры. Расхождение после переподключения — подмена
+  const commitmentChanged =
+    keys.revealedTo && channel.peerCommitment && keys.revealedTo !== channel.peerCommitment;
+  if ((keys.peerKey && channel.peerKey !== keys.peerKey) || commitmentChanged) {
+    keysMismatch();
+    return;
+  }
+  if (channel.cipher) {
+    return;
+  }
+  if (keys.role === "creator") {
+    if (!channel.peerCommitment) {
+      return;
+    }
+    if (!keys.revealedTo) {
+      keys = { ...keys, revealedTo: channel.peerCommitment };
+      await saveChannelKeys(slug, keys);
+      if (channel.slug !== slug) {
+        return;
+      }
+      channel.keys = keys;
+    }
+    if (!channel.keySent && !sendPublicKey(keys)) {
+      return;
+    }
+    if (!channel.peerKey) {
+      return;
+    }
+    const peerKey = fromBase64Url(channel.peerKey);
+    if (!(await matchesCommitment(peerKey, fromBase64Url(keys.revealedTo)))) {
+      keysMismatch();
+      return;
+    }
+  } else {
+    if (!channel.peerKey) {
+      return;
+    }
+    if (!channel.keySent && !sendPublicKey(keys)) {
+      return;
+    }
+  }
+
+  const peerKey = fromBase64Url(channel.peerKey);
+  const [creatorKey, joinerKey] =
+    keys.role === "creator" ? [keys.publicKey, peerKey] : [peerKey, keys.publicKey];
+  const cipher = await deriveChannelCipher(keys.privateKey, peerKey, {
+    slug,
+    creatorKey,
+    joinerKey,
+  });
+  if (!keys.peerKey) {
+    keys = { ...keys, peerKey: channel.peerKey };
+    await saveChannelKeys(slug, keys);
+  }
+  if (channel.slug !== slug) {
+    return;
+  }
+  channel.keys = keys;
+  channel.cipher = cipher;
+  showShapes(cipher.shapes);
+  channel.messages.forEach(reveal);
+  render();
+  offerShapesHint();
+  flushUploads();
+}
+
+function sendPublicKey(keys) {
+  if (!wsOpen()) {
+    return false;
+  }
+  channel.ws.send(JSON.stringify({ type: "public_key", key: toBase64Url(keys.publicKey) }));
+  channel.keySent = true;
+  return true;
+}
+
+function keysMismatch() {
+  const slug = channel.slug;
+  forgetChannel(slug);
+  clearTimeout(channel.retryTimer);
+  const ws = channel.ws;
+  channel.ws = null;
+  ws?.close();
+  showClosed(
+    "Ключи не сошлись",
+    "Кто-то мог вмешаться в обмен ключами, поэтому этот канал небезопасен. Откройте новый.",
+  );
+}
+
+function shapeLabel({ shape, filled }) {
+  const [name, gender] = SHAPES[shape];
+  return `${name}, ${SHAPE_FILL[filled][gender]}`;
+}
+
+function showShapes(shapes) {
+  channelShapesEl.replaceChildren(
+    ...shapes.map((item) => {
+      const span = document.createElement("span");
+      span.className = "seal-shape";
+      const paint = item.filled
+        ? 'fill="currentColor"'
+        : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"';
+      // Разметка из постоянной таблицы SHAPES, данных собеседника в ней нет
+      span.innerHTML = `<svg role="img" viewBox="0 0 24 24" width="20" height="20"><g ${paint}>${SHAPES[item.shape][2]}</g></svg>`;
+      span.firstElementChild.setAttribute("aria-label", shapeLabel(item));
+      return span;
+    }),
+  );
+}
+
+function setHintOpen(open) {
+  channelHintEl.hidden = !open;
+  channelSealBtn.setAttribute("aria-expanded", String(open));
+}
+
+// Подсказка всплывает сама один раз на устройстве, дальше её открывает капсула
+function offerShapesHint() {
+  if (!channelSecureEl.hidden && localStorage.getItem(SHAPES_HINT_KEY) === null) {
+    setHintOpen(true);
+  }
+}
+
+function dismissHint() {
+  setHintOpen(false);
+  localStorage.setItem(SHAPES_HINT_KEY, "1");
+}
+
 // От состояния зависит точка перед текстом: зелёная — в сети, янтарная — нет связи
 function connectionState(active) {
   if (channel.connection) {
@@ -373,7 +665,24 @@ function render() {
   becomeSenderBtn.hidden = !active || isSender;
   becomeSenderBtn.disabled = !channel.ws;
   channelComposeEl.hidden = !active || !isSender;
-  channelSendBtn.disabled = !channel.ws;
+  channelSendBtn.disabled = !channel.ws || !channel.cipher;
+  channelAttachBtn.disabled = !channel.cipher;
+
+  // До второго устройства обмениваться ключами не с кем — об этом уже говорит приглашение
+  const ready = Boolean(channel.cipher);
+  channelSecureEl.hidden = !active || !channel.peerJoined;
+  channelSealBtn.dataset.state = ready ? "ready" : "pending";
+  channelSealBtn.disabled = !ready;
+  if (ready) {
+    channelSecureTextEl.textContent = "Зашифровано";
+  } else if (channel.peerOnline) {
+    channelSecureTextEl.textContent = "Обмен ключами…";
+  } else {
+    channelSecureTextEl.textContent = "Обмен ключами: ждём второе устройство";
+  }
+  if (channelSecureEl.hidden) {
+    setHintOpen(false);
+  }
 
   // QR нужен, только пока второе устройство не подключалось: третьего канал не пустит
   const inviting = active && !channel.peerJoined;
@@ -420,27 +729,81 @@ function addMessage(message) {
   const left = el("span", "feed-left");
   item.append(time, body);
 
-  let card = null;
-  if (message.kind === "file" && message.file) {
-    item.classList.add("file");
-    card = createFileCard(message.file, {
-      status: isOwnFile(message) ? "Ждёт скачивания" : "",
-    });
-    body.append(card.el, left);
-  } else {
-    const copy = el("button", "button", "Скопировать");
+  const isText = message.kind === "text";
+  // Файла нет в сообщении, когда его уже скачали и удалили с сервера
+  const gone = !isText && !message.file;
+  const placeholder = gone
+    ? el("pre", "feed-text gone", "Файл больше недоступен")
+    : el("pre", "feed-text pending", "…");
+  body.append(placeholder, left);
+  let copy = null;
+  if (isText) {
+    copy = el("button", "button", "Скопировать");
     copy.type = "button";
-    copy.addEventListener("click", () => copyMessage(message.text));
-    body.append(el("pre", "feed-text", message.text), left);
+    copy.hidden = true;
     item.append(copy);
+  } else {
+    item.classList.add("file");
   }
   // Новые сверху: обычно нужно именно последнее присланное
   const older = [...channel.messages.values()]
     .filter((m) => m.data.id < message.id)
     .sort((a, b) => b.data.id - a.data.id)[0];
   feedEl.insertBefore(item, older ? older.el : null);
-  channel.messages.set(message.id, { data: message, el: item, left, card });
-  updateLeft(channel.messages.get(message.id));
+  const entry = {
+    data: message,
+    el: item,
+    left,
+    placeholder,
+    copy,
+    text: null,
+    card: null,
+    // file_downloaded может прийти раньше, чем расшифровано описание файла
+    receivedText: null,
+    opening: gone,
+  };
+  channel.messages.set(message.id, entry);
+  copy?.addEventListener("click", () => copyMessage(entry.text));
+  updateLeft(entry);
+  reveal(entry);
+}
+
+// До общего ключа сообщение ждёт: после перезагрузки state приходит раньше, чем он посчитан
+async function reveal(entry) {
+  const cipher = channel.cipher;
+  if (!cipher || entry.opening) {
+    return;
+  }
+  entry.opening = true;
+  const slug = channel.slug;
+  const message = entry.data;
+  try {
+    const payload = fromBase64Url(message.payload);
+    if (message.kind === "text") {
+      entry.text = await openText(cipher.textKey, slug, payload);
+      entry.placeholder.textContent = entry.text;
+      entry.placeholder.classList.remove("pending");
+      entry.copy.hidden = false;
+      return;
+    }
+    const meta = await openFileMeta(cipher.textKey, slug, payload);
+    // Имя и размер — из описания; у сервера только размер шифротекста
+    const file = { ...message.file, name: meta.name, size: meta.size, stored_size: message.file.size };
+    entry.card = createFileCard(file, {
+      status: isOwnFile(message) ? "Ждёт скачивания" : "",
+      decrypt: (sealed) => openFile(cipher.fileKey, slug, meta.nonce, sealed),
+    });
+    entry.placeholder.replaceWith(entry.card.el);
+    if (entry.receivedText) {
+      entry.card.markReceived(entry.receivedText);
+    }
+  } catch {
+    entry.placeholder.textContent =
+      message.kind === "text"
+        ? "Не удалось расшифровать сообщение"
+        : "Не удалось расшифровать описание файла";
+    entry.placeholder.classList.replace("pending", "undecryptable");
+  }
 }
 
 function updateLeft(entry) {
@@ -468,19 +831,28 @@ async function copyMessage(text) {
   }
 }
 
-function sendMessage() {
+async function sendMessage() {
   const text = channelTextEl.value;
   if (!text.trim()) {
     showStatus("Нечего отправлять: поле пустое", "error");
     return;
   }
-  if (!channel.ws || channel.ws.readyState !== WebSocket.OPEN) {
+  if (!channel.cipher) {
+    showStatus(KEYS_PENDING_TEXT, "error");
+    return;
+  }
+  const slug = channel.slug;
+  const payload = await sealText(channel.cipher.textKey, slug, text);
+  if (!wsOpen() || channel.slug !== slug) {
     showStatus("Нет связи с каналом", "error");
     return;
   }
-  channel.ws.send(JSON.stringify({ type: "send", text }));
-  channelTextEl.value = "";
-  updateChannelCounter();
+  channel.ws.send(JSON.stringify({ type: "send", payload: toBase64Url(payload) }));
+  // Пока шифровали, могли дописать ещё — тогда поле не трогаем
+  if (channelTextEl.value === text) {
+    channelTextEl.value = "";
+    updateChannelCounter();
+  }
   channelTextEl.focus();
 }
 
@@ -489,11 +861,17 @@ function wsOpen() {
 }
 
 function sendFiles(files) {
+  // Перетащить или вставить файл можно и при выключенной кнопке «Файлы»
+  if (!channel.cipher) {
+    showStatus(KEYS_PENDING_TEXT, "error");
+    return;
+  }
   for (const file of files) {
     const upload = startUpload(file, {
       url: () => `${CHANNEL_API}/${encodeURIComponent(channel.slug)}/files`,
       headers: () => ({ "X-Participant-Token": channel.token }),
       list: channelUploadsEl,
+      encrypt: sealChannelFile,
       onDone: flushUploads,
       onRemoved: (removed) => {
         channel.uploads = channel.uploads.filter((item) => item !== removed);
@@ -501,6 +879,18 @@ function sendFiles(files) {
     });
     channel.uploads.push(upload);
   }
+}
+
+// Сервер получает только шифротекст; имя, размер и nonce уходят зашифрованным описанием
+async function sealChannelFile(file) {
+  const { slug, cipher } = channel;
+  const { body, nonce } = await sealFile(cipher.fileKey, slug, file);
+  const meta = await sealFileMeta(cipher.textKey, slug, {
+    name: file.name || "файл",
+    size: file.size,
+    nonce,
+  });
+  return { body, payload: toBase64Url(meta) };
 }
 
 // Загруженные файлы отправляем в канал; без связи — дождутся переподключения (state)
@@ -513,7 +903,9 @@ function flushUploads() {
       upload.status.textContent = "Ждёт связи…";
       continue;
     }
-    channel.ws.send(JSON.stringify({ type: "send_file", file_id: upload.id }));
+    channel.ws.send(
+      JSON.stringify({ type: "send_file", file_id: upload.id, payload: upload.sealed.payload }),
+    );
     upload.sent = true;
     upload.status.textContent = "Отправляется…";
   }
@@ -597,6 +989,24 @@ navChannelBtn.addEventListener("click", () => {
 });
 joinFormEl.addEventListener("submit", joinByCode);
 becomeSenderBtn.addEventListener("click", becomeSender);
+channelSealBtn.addEventListener("click", () => {
+  if (channelHintEl.hidden) {
+    setHintOpen(true);
+  } else {
+    dismissHint();
+  }
+});
+channelHintOkBtn.addEventListener("click", dismissHint);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !channelHintEl.hidden) {
+    dismissHint();
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!channelHintEl.hidden && !channelSecureEl.contains(event.target)) {
+    dismissHint();
+  }
+});
 channelSendBtn.addEventListener("click", sendMessage);
 bindFilePicker(channelAttachBtn, channelAttachInput, sendFiles);
 acceptDroppedAndPasted(channelComposeEl, channelTextEl, sendFiles);

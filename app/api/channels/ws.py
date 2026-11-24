@@ -20,7 +20,9 @@ from app.schemas.channel_events import (
     ClientEvent,
     ErrorEvent,
     MessageEvent,
+    PeerKeyEvent,
     PeerStatusEvent,
+    PublicKeyEvent,
     RolesChangedEvent,
     SendEvent,
     SendFileEvent,
@@ -46,6 +48,20 @@ class InvalidEventError(Exception):
 
 class MessageTooBigError(Exception):
     pass
+
+
+KEYS_NOT_READY = ErrorEvent(code="keys_not_ready", detail="Devices have not exchanged keys yet")
+KEY_EXCHANGE_ERRORS: dict[type[channels_service.KeyExchangeError], ErrorEvent] = {
+    channels_service.KeyOutOfOrderError: ErrorEvent(
+        code="key_out_of_order", detail="Wait for the peer's commitment or key"
+    ),
+    channels_service.KeyAlreadySentError: ErrorEvent(
+        code="key_already_sent", detail="Your key is already sent"
+    ),
+    channels_service.KeyMismatchError: ErrorEvent(
+        code="key_mismatch", detail="The key does not match your commitment"
+    ),
+}
 
 
 async def _receive_event(websocket: WebSocket) -> ClientEvent:
@@ -102,6 +118,7 @@ class LoadedState:
     role: ParticipantRole
     peer_joined: bool
     messages: list[MessageRead]
+    keys: channels_service.KeyExchange
 
 
 async def _get_participant(
@@ -123,12 +140,13 @@ async def _load_state(db: AsyncSession, participant_id: int) -> LoadedState:
         role=ParticipantRole(participant.role),
         peer_joined=participants == channels_service.MAX_PARTICIPANTS,
         messages=await live_messages_read(db, channel, viewer_id=participant_id),
+        keys=await channels_service.get_key_exchange(db, participant),
     )
 
 
-async def _add_message(db: AsyncSession, participant_id: int, text: str) -> MessageEvent:
+async def _add_message(db: AsyncSession, participant_id: int, payload: bytes) -> MessageEvent:
     participant = await _get_participant(db, participant_id)
-    message = await channels_service.add_message(db, participant, text)
+    message = await channels_service.add_message(db, participant, payload)
     return MessageEvent.model_validate(message)
 
 
@@ -139,10 +157,10 @@ class FileMessageEvents:
 
 
 async def _add_file_message(
-    db: AsyncSession, participant_id: int, file_id: str
+    db: AsyncSession, participant_id: int, file_id: str, payload: bytes
 ) -> FileMessageEvents:
     participant = await _get_participant(db, participant_id)
-    message, stored = await channels_service.add_file_message(db, participant, file_id)
+    message, stored = await channels_service.add_file_message(db, participant, file_id, payload)
     return FileMessageEvents(
         for_uploader=MessageEvent(**message_read(message, stored, with_links=False).model_dump()),
         for_others=MessageEvent(**message_read(message, stored, with_links=True).model_dump()),
@@ -151,6 +169,11 @@ async def _add_file_message(
 
 async def _become_sender(db: AsyncSession, participant_id: int) -> None:
     await channels_service.become_sender(db, await _get_participant(db, participant_id))
+
+
+async def _submit_public_key(db: AsyncSession, participant_id: int, key: bytes) -> int:
+    participant = await _get_participant(db, participant_id)
+    return await channels_service.submit_public_key(db, participant, key)
 
 
 async def _close_if_idle(
@@ -199,6 +222,9 @@ async def channel_ws(websocket: WebSocket, slug: str) -> None:
             peer_joined=loaded.peer_joined,
             peer_online=manager.is_peer_online(slug, me),
             messages=loaded.messages,
+            key_sent=loaded.keys.key_sent,
+            peer_key_commitment=loaded.keys.peer_key_commitment,
+            peer_public_key=loaded.keys.peer_public_key,
         )
         await connection.start(state)
         rate_limit = TokenBucket(settings.WS_RATE_LIMIT_PER_SECOND, settings.WS_RATE_LIMIT_BURST)
@@ -235,20 +261,28 @@ async def _handle_event(
     me: int,
 ) -> None:
     match event:
-        case SendEvent(text=text):
+        case SendEvent(payload=payload):
             try:
-                message = await run_db(factory, lambda db: _add_message(db, me, text))
+                message = await run_db(factory, lambda db: _add_message(db, me, payload))
             except channels_service.ActionNotAllowedError:
                 error = ErrorEvent(code="not_sender", detail="Only the sender can send messages")
                 await connection.send(error)
                 return
+            except channels_service.KeysNotReadyError:
+                await connection.send(KEYS_NOT_READY)
+                return
             await manager.broadcast(slug, message)
-        case SendFileEvent(file_id=file_id):
+        case SendFileEvent(file_id=file_id, payload=payload):
             try:
-                events = await run_db(factory, lambda db: _add_file_message(db, me, file_id))
+                events = await run_db(
+                    factory, lambda db: _add_file_message(db, me, file_id, payload)
+                )
             except channels_service.ActionNotAllowedError:
                 error = ErrorEvent(code="not_sender", detail="Only the sender can send files")
                 await connection.send(error)
+                return
+            except channels_service.KeysNotReadyError:
+                await connection.send(KEYS_NOT_READY)
                 return
             except files_service.FilesNotAvailableError:
                 error = ErrorEvent(
@@ -271,6 +305,13 @@ async def _handle_event(
             for pid in manager.participant_ids(slug):
                 role = ParticipantRole.SENDER if pid == me else ParticipantRole.RECEIVER
                 await manager.send_to(slug, pid, RolesChangedEvent(role=role))
+        case PublicKeyEvent(key=key):
+            try:
+                peer = await run_db(factory, lambda db: _submit_public_key(db, me, key))
+            except channels_service.KeyExchangeError as exc:
+                await connection.send(KEY_EXCHANGE_ERRORS[type(exc)])
+                return
+            await manager.send_to(slug, peer, PeerKeyEvent(key=key))
         case AuthEvent():
             error = ErrorEvent(code="already_authenticated", detail="Already authenticated")
             await connection.send(error)

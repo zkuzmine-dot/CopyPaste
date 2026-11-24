@@ -10,6 +10,7 @@ from app.services import channels as channels_service
 from app.services import files as files_service
 from app.settings import settings
 from app.storage.base import new_storage_key
+from tests.channel_keys import device_keys, fake_payload, join_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -53,7 +54,7 @@ async def test_concurrent_joins_take_only_one_slot(factory, monkeypatch):
     async def join() -> None:
         try:
             async with factory() as db, db.begin():
-                await channels_service.join_channel(db, slug)
+                await channels_service.join_channel(db, slug, device_keys().commitment)
             results.append("joined")
         except channels_service.ChannelFullError:
             results.append("full")
@@ -70,10 +71,58 @@ async def test_concurrent_joins_take_only_one_slot(factory, monkeypatch):
     assert count == 2
 
 
+async def test_concurrent_keys_from_one_device_accept_only_one(factory, monkeypatch):
+    slug = await create_committed_channel(factory)
+    async with factory() as db, db.begin():
+        await channels_service.join_channel(db, slug, device_keys().commitment)
+
+    # Первый ключ держит блокировку, пока «спит» в _touch. Второй загрузил создателя ещё до
+    # неё: без блокировки или без перечитывания после неё он увидел бы пустой ключ и записал
+    # свой поверх — а собеседник уже получил первый
+    first_holds_lock = anyio.Event()
+    original_touch = channels_service._touch
+
+    async def slow_touch(db, channel_id):
+        first_holds_lock.set()
+        await anyio.sleep(RACE_WINDOW)
+        await original_touch(db, channel_id)
+
+    monkeypatch.setattr(channels_service, "_touch", slow_touch)
+    first, second = device_keys().public, device_keys().public
+    results: list[str] = []
+
+    async def submit_first() -> None:
+        async with factory() as db, db.begin():
+            creator = await load_participant(db, slug, ParticipantRole.RECEIVER)
+            await channels_service.submit_public_key(db, creator, first)
+        results.append("first")
+
+    async def submit_second() -> None:
+        async with factory() as db:
+            creator = await load_participant(db, slug, ParticipantRole.RECEIVER)
+            await db.commit()
+            await first_holds_lock.wait()
+            try:
+                async with db.begin():
+                    await channels_service.submit_public_key(db, creator, second)
+                results.append("second")
+            except channels_service.KeyAlreadySentError:
+                results.append("rejected")
+
+    async with anyio.create_task_group() as group:
+        group.start_soon(submit_first)
+        group.start_soon(submit_second)
+
+    assert sorted(results) == ["first", "rejected"]
+    async with factory() as db:
+        creator = await load_participant(db, slug, ParticipantRole.RECEIVER)
+        assert creator.public_key == first
+
+
 async def test_send_during_role_swap_is_rejected(factory, monkeypatch):
     slug = await create_committed_channel(factory)
     async with factory() as db, db.begin():
-        await channels_service.join_channel(db, slug)
+        await join_ready(db, slug)
 
     # become_sender держит блокировку канала, пока «спит» в _touch, — в это время
     # старый отправитель пытается отправить. Он должен дождаться коммита
@@ -104,7 +153,7 @@ async def test_send_during_role_swap_is_rejected(factory, monkeypatch):
             await swap_holds_lock.wait()
             try:
                 async with db.begin():
-                    await channels_service.add_message(db, old_sender, "too late")
+                    await channels_service.add_message(db, old_sender, fake_payload("too late"))
                 result.append("sent")
             except channels_service.ActionNotAllowedError:
                 result.append("rejected")
@@ -122,7 +171,7 @@ async def test_send_during_role_swap_is_rejected(factory, monkeypatch):
 async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
     slug = await create_committed_channel(factory)
     async with factory() as db, db.begin():
-        await channels_service.join_channel(db, slug)
+        await join_ready(db, slug)
 
     # Последняя активность — минуту назад. Пока таймаут час, отправка видит канал активным.
     # Когда она прошла проверку и «спит» в _touch, таймаут становится 30 с: для чистки
@@ -150,7 +199,7 @@ async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
     async def send() -> None:
         async with factory() as db, db.begin():
             sender = await load_participant(db, slug, ParticipantRole.SENDER)
-            await channels_service.add_message(db, sender, "just in time")
+            await channels_service.add_message(db, sender, fake_payload("just in time"))
 
     deleted: list[int] = []
 
@@ -167,14 +216,16 @@ async def test_cleanup_waits_for_message_in_progress(factory, monkeypatch):
 
     assert deleted == [0]
     async with factory() as db:
-        texts = await db.scalars(select(Message.text).join(Channel).where(Channel.slug == slug))
-        assert texts.all() == ["just in time"]
+        payloads = await db.scalars(
+            select(Message.payload).join(Channel).where(Channel.slug == slug)
+        )
+        assert payloads.all() == [fake_payload("just in time")]
 
 
 async def test_send_file_during_role_swap_is_rejected(factory, monkeypatch):
     slug = await create_committed_channel(factory)
     async with factory() as db, db.begin():
-        sender, _ = await channels_service.join_channel(db, slug)
+        sender, _ = await join_ready(db, slug)
         stored = await files_service.create_upload(
             db,
             storage_key=new_storage_key(),
@@ -211,7 +262,9 @@ async def test_send_file_during_role_swap_is_rejected(factory, monkeypatch):
             await swap_holds_lock.wait()
             try:
                 async with db.begin():
-                    await channels_service.add_file_message(db, old_sender, file_id)
+                    await channels_service.add_file_message(
+                        db, old_sender, file_id, fake_payload("meta")
+                    )
                 result.append("sent")
             except channels_service.ActionNotAllowedError:
                 result.append("rejected")

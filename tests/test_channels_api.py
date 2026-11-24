@@ -3,6 +3,15 @@ import pytest
 from app.services import channels as channels_service
 from app.utils.qr import make_qr_svg
 from app.utils.slug import SLUG_ALPHABET, SLUG_LENGTH
+from tests.channel_keys import (
+    DeviceKeys,
+    b64url,
+    device_keys,
+    exchange_keys_by_token,
+    fake_payload,
+    join_by_http,
+    text_of,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -17,8 +26,13 @@ async def created(client) -> dict:
 
 
 @pytest.fixture
-async def joined(client, created) -> dict:
-    response = await client.post(f"{URL}/{created['slug']}/join")
+def joiner_keys() -> DeviceKeys:
+    return device_keys()
+
+
+@pytest.fixture
+async def joined(client, created, joiner_keys) -> dict:
+    response = await join_by_http(client, created["slug"], joiner_keys)
     assert response.status_code == 201
     return response.json()
 
@@ -52,16 +66,37 @@ async def test_join_channel(created, joined):
 
 
 async def test_join_full_channel(client, created, joined):
-    response = await client.post(f"{URL}/{created['slug']}/join")
+    response = await join_by_http(client, created["slug"])
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Channel is full"}
 
 
 async def test_join_unknown_channel(client):
-    response = await client.post(f"{URL}/zzzzzzzz/join")
+    response = await join_by_http(client, "zzzzzzzz")
 
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        None,
+        {},
+        {"key_commitment": b64url(bytes(31))},
+        {"key_commitment": b64url(bytes(33))},
+        {"key_commitment": b64url(bytes(32)) + "="},
+        {"key_commitment": "+" * 43},
+        {"key_commitment": 123},
+    ],
+    ids=["no_body", "no_field", "short", "long", "padding", "not_base64url", "not_string"],
+)
+async def test_join_requires_valid_commitment(client, db, created, body):
+    response = await client.post(f"{URL}/{created['slug']}/join", json=body)
+
+    assert response.status_code == 422
+    channel = await channels_service.get_active_channel(db, created["slug"])
+    assert await channels_service.count_participants(db, channel) == 1
 
 
 # --- GET /api/channels/{slug} ---
@@ -76,26 +111,44 @@ async def test_state_before_join(client, created):
         "role": "receiver",
         "peer_joined": False,
         "messages": [],
+        "key_sent": False,
+        "peer_key_commitment": None,
+        "peer_public_key": None,
     }
 
 
-async def test_state_after_join(client, created, joined):
+async def test_state_after_join(client, created, joined, joiner_keys):
     receiver_state = (await get_state(client, created["slug"], created["token"])).json()
     sender_state = (await get_state(client, created["slug"], joined["token"])).json()
 
     assert (receiver_state["role"], receiver_state["peer_joined"]) == ("receiver", True)
     assert (sender_state["role"], sender_state["peer_joined"]) == ("sender", True)
+    # Отпечаток второго видит создатель — он отвечает на него своим ключом
+    assert receiver_state["peer_key_commitment"] == joiner_keys.commitment_b64
+    assert sender_state["peer_key_commitment"] is None
 
 
-async def test_state_shows_messages(client, db, created, joined):
+async def test_state_after_key_exchange(client, db, created, joined, joiner_keys):
+    await exchange_keys_by_token(db, created["slug"], joined["token"], joiner_keys)
+
+    receiver_state = (await get_state(client, created["slug"], created["token"])).json()
+    sender_state = (await get_state(client, created["slug"], joined["token"])).json()
+
+    assert receiver_state["key_sent"] and sender_state["key_sent"]
+    assert receiver_state["peer_public_key"] == joiner_keys.public_b64
+    assert sender_state["peer_public_key"] is not None
+
+
+async def test_state_shows_messages(client, db, created, joined, joiner_keys):
+    await exchange_keys_by_token(db, created["slug"], joined["token"], joiner_keys)
     channel = await channels_service.get_active_channel(db, created["slug"])
     sender = await channels_service.get_participant(db, channel, joined["token"])
-    await channels_service.add_message(db, sender, "hello")
+    await channels_service.add_message(db, sender, fake_payload("hello"))
 
     messages = (await get_state(client, created["slug"], created["token"])).json()["messages"]
 
-    assert [m["text"] for m in messages] == ["hello"]
-    assert set(messages[0]) == {"id", "kind", "text", "file", "created_at", "expires_at"}
+    assert [text_of(m) for m in messages] == ["hello"]
+    assert set(messages[0]) == {"id", "kind", "payload", "file", "created_at", "expires_at"}
     assert messages[0]["kind"] == "text"
     assert messages[0]["file"] is None
 

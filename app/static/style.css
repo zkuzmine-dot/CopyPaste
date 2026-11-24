@@ -1197,6 +1197,136 @@ kbd {
   border-color: var(--warn);
 }
 
+/* Капсула с проверочными фигурами прилипает к верху экрана, чтобы их можно было сверить
+   в любой момент, не листая ленту */
+.seal-dock {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  align-self: center;
+}
+
+.seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.seal:disabled {
+  cursor: default;
+}
+
+.seal[data-state="ready"] {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.seal-lock {
+  flex: none;
+}
+
+.seal[data-state="pending"] .seal-lock,
+.seal[data-state="pending"] .seal-shapes {
+  display: none;
+}
+
+.seal[data-state="ready"] .seal-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.seal-shapes {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.seal-shape svg {
+  display: block;
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--primary) 55%, transparent));
+  animation: seal-light 0.9s ease-out both;
+}
+
+.seal-shape:nth-child(2) svg {
+  animation-delay: 0.12s;
+}
+
+.seal-shape:nth-child(3) svg {
+  animation-delay: 0.24s;
+}
+
+.seal-shape:nth-child(4) svg {
+  animation-delay: 0.36s;
+}
+
+@keyframes seal-light {
+  from {
+    opacity: 0.15;
+    filter: none;
+  }
+
+  60% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px var(--primary));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seal-shape svg {
+    animation: none;
+  }
+}
+
+.seal-hint {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  width: min(320px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+}
+
+.seal-hint::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line-strong);
+  background: var(--bg);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.seal-hint-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.seal-hint .button {
+  align-self: flex-end;
+}
+
 .invite {
   display: flex;
   flex-wrap: wrap;
@@ -1361,6 +1491,20 @@ kbd {
   font: 14px/1.6 var(--mono);
 }
 
+.feed-text.pending,
+.feed-text.gone {
+  color: var(--muted);
+}
+
+.feed-text.undecryptable {
+  color: var(--error);
+  font-family: var(--font);
+}
+
+.feed-text.gone {
+  font-family: var(--font);
+}
+
 .feed-left {
   color: var(--muted);
   font-size: 12px;
@@ -1464,6 +1608,10 @@ kbd {
 
 .about-list li::marker {
   color: var(--primary);
+}
+
+.about-list .term {
+  white-space: nowrap;
 }
 
 .faq {
