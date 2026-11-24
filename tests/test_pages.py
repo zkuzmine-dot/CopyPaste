@@ -17,9 +17,18 @@ async def test_page_returns_html(client, path):
     assert '<script src="/static/files.js">' in response.text
 
 
+async def test_theme_is_set_before_styles(client):
+    # Иначе страница сначала отрисуется в системной теме и мигнёт при переключении
+    html = (await client.get("/")).text
+    head = html[: html.index("</head>")]
+
+    assert head.index('<script src="/static/prefs.js">') < head.index('href="/static/style.css"')
+
+
 @pytest.mark.parametrize(
     ("path", "content_type"),
     [
+        ("/static/prefs.js", "javascript"),
         ("/static/app.js", "javascript"),
         ("/static/channel.js", "javascript"),
         ("/static/files.js", "javascript"),

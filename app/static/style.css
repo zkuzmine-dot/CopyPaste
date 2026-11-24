@@ -117,25 +117,24 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c140b;
-    --panel: #122011;
-    --line: #1d331a;
-    --line-strong: #335a2c;
-    --field: #467a3b;
-    --text: #ecf6e8;
-    --muted: #a3bb9b;
-    --primary: #6fbf3a;
-    --primary-hover: #86cf55;
-    --on-primary: #0c1a07;
-    --link: #8fd65f;
-    --live: #6fcf4a;
-    --ok: #6fcf4a;
-    --warn: #e6b04d;
-    --error: #ff8a7a;
-    color-scheme: dark;
-  }
+/* Тему ставит prefs.js: по системе или по выбору пользователя */
+:root[data-theme="dark"] {
+  --bg: #0c140b;
+  --panel: #122011;
+  --line: #1d331a;
+  --line-strong: #335a2c;
+  --field: #467a3b;
+  --text: #ecf6e8;
+  --muted: #a3bb9b;
+  --primary: #6fbf3a;
+  --primary-hover: #86cf55;
+  --on-primary: #0c1a07;
+  --link: #8fd65f;
+  --live: #6fcf4a;
+  --ok: #6fcf4a;
+  --warn: #e6b04d;
+  --error: #ff8a7a;
+  color-scheme: dark;
 }
 
 * {
@@ -244,8 +243,76 @@ a:hover {
 }
 
 .nav {
+  flex: none;
   display: flex;
   gap: 28px;
+  margin-left: auto;
+}
+
+.theme-toggle {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 -9px 0 -8px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+}
+
+.theme-icon {
+  display: block;
+}
+
+/* Солнце и луна на одном диске: полуоборот вокруг середины горизонта, солнце заходит,
+   луна восходит */
+.theme-dial {
+  transform-box: view-box;
+  transform-origin: 12px 19px;
+  transition: transform 0.6s ease-in-out;
+}
+
+:root[data-theme="dark"] .theme-dial {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-dial {
+    transition: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .header-inner {
+    gap: 16px;
+  }
+
+  .nav {
+    gap: 20px;
+  }
+}
+
+/* На самых узких экранах от логотипа остаётся знак, название слышит только диктор */
+@media (max-width: 360px) {
+  .logo-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* Подчёркивание ложится на линию под шапкой: пункт на 1px выше её нижнего края */

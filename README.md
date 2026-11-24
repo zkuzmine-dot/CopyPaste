@@ -17,6 +17,10 @@
 Файлы прикрепляются кнопкой, перетаскиванием или вставкой из буфера (Ctrl+V), с полоской
 прогресса.
 
+Тема сначала берётся из системы, кнопка в шапке переключает светлую и тёмную. Выбор хранится в
+`localStorage` (`copypaste:theme`), без него тема следует за системой и меняется вместе с ней.
+Тему ставит `static/prefs.js` в `<head>` до стилей, поэтому страница не мигает другим цветом.
+
 ## Запуск
 
 ```bash
@@ -81,7 +85,8 @@ app/
   utils/                      шифрование, подписанные ссылки, Range, тип файла, QR, токены
   jobs/, scheduler.py         периодическая чистка
   static/                     фронтенд без сборки: index.html, app.js, channel.js, files.js,
-                              channel-crypto.js (ключи канала), channel-keystore.js (IndexedDB)
+                              channel-crypto.js (ключи канала), channel-keystore.js (IndexedDB),
+                              prefs.js (тема)
   static/fonts/               IBM Plex Sans и Mono (SIL OFL 1.1, тексты лицензий рядом)
 ```
 
